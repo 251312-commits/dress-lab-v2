@@ -240,7 +240,9 @@
 
 사용자가 제공한 포즈 JSON을 **[`rig/poses/user-reference.json`](rig/poses/user-reference.json)**으로 보존하고, 동일한 11개 관절값을 기본 포즈로 등록했다. 이 포즈를 중심으로 **첨부 포즈 연기·큰 손짓·한발 콩콩·좌우 율동·기지개** 5개 단발 애니메이션을 추가했다.
 
-- **[관절·큰 동작 테스트](https://251312-commits.github.io/dress-lab-v2/?rig=1)** → '기본 포즈'의 **첨부 포즈** 또는 '큰 동작' 버튼으로 실행
+- **[큰 동작 바로 보기](https://251312-commits.github.io/dress-lab-v2/?motions=1)** → 스크롤할 필요 없이 화면에 고정된 다섯 동작 버튼으로 실행
+- **[첨부 포즈 자동 재생](https://251312-commits.github.io/dress-lab-v2/?motions=1&motion=showPose)** → 진입 시 해당 동작을 한 번 재생
+- **[전체 관절 편집기](https://251312-commits.github.io/dress-lab-v2/?rig=1)** → 자세한 관절 슬라이더까지 확인
 - 동작은 탄성 보간을 거쳐 기본 자세로 돌아오며 평상시 자동 idle에 섞이지 않는다.
 - **[리그·동작 설계 상세](rig/README.md)**
 
