@@ -2,7 +2,7 @@
  *
  * This is deliberately NOT the v1 whole-image warp. Only four leg PNG layers
  * are resampled, one horizontal image row at a time. The hip boundary
- * follows 30% of thigh change; the top and bottom knee pieces both receive
+ * follows the full thigh width change; the top and bottom knee pieces receive
  * exactly 30% of EACH thigh and calf change, so the seam uses one shared
  * scale. The foot returns to its original width.
  *
@@ -34,7 +34,7 @@
       this.rig = rig;
       this.thighs = 100;
       this.calves = 100;
-      this.hipInfluence = 0.30;
+      this.hipInfluence = 1.00;
       this.kneeInfluence = 0.30;
       this.sources = new Map();
       this.canvasesBuilt = 0;
@@ -118,18 +118,15 @@
       const knee = this.rig.config.pivots["knee" + side].y;
       const dThigh = this.thighs / 100 - 1;
       const dCalf = this.calves / 100 - 1;
-      const hipDelta = this.hipInfluence * dThigh;
       const kneeDelta = this.kneeScale() - 1;
 
       if (upper) {
         const t = clamp((y - hip) / Math.max(1, knee - hip), 0, 1);
-        // Keep a small stable zone around the upper hip attachment.
-        // Move smoothly from its 30% influence to the full thigh width.
-        const thighRise = smoothstep(0.06, 0.36, t);
-        // Reach the SAME knee scale as the lower-leg piece before the seam.
+        // The hip attachment and thigh body share the same full thigh
+        // adjustment. Blend only near the knee so the two knee pieces keep
+        // their existing common 30%-per-control width.
         const kneeBlend = smoothstep(0.70, 0.90, t);
-        return 1 + (hipDelta * (1 - thighRise) + dThigh * thighRise) *
-          (1 - kneeBlend) + kneeDelta * kneeBlend;
+        return 1 + dThigh * (1 - kneeBlend) + kneeDelta * kneeBlend;
       }
 
       // The lower-leg PNG includes the foot. Its bottom ~16% must remain
@@ -200,7 +197,7 @@
         return false;
       }
       const thighs = clamp(nextThighs, 85, 135);
-      const calves = clamp(nextCalves, 85, 135);
+      const calves = clamp(nextCalves, 85, 115);
       if (this.thighs === thighs && this.calves === calves) return true;
 
       this.thighs = thighs;
