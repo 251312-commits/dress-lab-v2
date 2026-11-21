@@ -78,7 +78,7 @@
         }).join(""),
         '<p class="shape-intro shape-limit">종아리 상한 115% · 엔진과 슬라이더에 동일하게 적용됨</p>',
         '<div class="shape-notes" role="status" aria-live="polite">',
-          '<div><span>허리 연결부</span><output id="shape-waist-value">100.0%</output></div>',
+          '<div><span>허리 연결부</span><output id="shape-waist-seam-value">100.0%</output></div>',
           '<div><span>골반 → 허벅지 연결부</span><output id="shape-hip-value">100.0%</output></div>',
           '<div><span>무릎 위·아래 공통</span><output id="shape-knee-value">100.0%</output></div>',
         '</div>',
@@ -123,7 +123,7 @@
         outputs[key].textContent = state[key] + "%";
       }
       // Both sides of each seam use the same computed scale.
-      panel.querySelector("#shape-waist-value").textContent = state.waist.toFixed(1) + "%";
+      panel.querySelector("#shape-waist-seam-value").textContent = state.waist.toFixed(1) + "%";
       panel.querySelector("#shape-hip-value").textContent = (state.hipScale * 100).toFixed(1) + "%";
       panel.querySelector("#shape-knee-value").textContent = (state.kneeScale * 100).toFixed(1) + "%";
     }
