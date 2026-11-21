@@ -24,17 +24,33 @@
       width: 100vw;
       height: 100vh; /* fallback */
       height: 100dvh;
+      display: grid;
+      place-items: center;
       overflow: hidden;
       background: #fff;
+    }
+    /*
+     * The artboard is the original PNG coordinate plane, uniformly scaled
+     * to fit the viewport. Nothing is cropped or geometrically distorted.
+     * Future UI elements can be positioned in this same coordinate plane.
+     */
+    .artboard {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      flex: none;
     }
     #character {
       display: block;
       width: 100%;
       height: 100%;
-      object-fit: cover;
-      object-position: center center;
     }
-    .stage[aria-busy="true"] #character { visibility: hidden; }
+    .ui-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .stage[aria-busy="true"] .artboard { visibility: hidden; }
 
     /* Visible only while loading or when an error occurred. */
     .loading {
@@ -66,7 +82,10 @@
 </head>
 <body>
   <main class="stage" id="stage" aria-label="기본 캐릭터 이미지" aria-busy="true">
-    <canvas id="character" role="img" aria-label="분리된 신체 파츠를 합친 기본 캐릭터">Canvas를 지원하지 않는 브라우저야.</canvas>
+    <div class="artboard" id="artboard">
+      <canvas id="character" role="img" aria-label="분리된 신체 파츠를 합친 기본 캐릭터">Canvas를 지원하지 않는 브라우저야.</canvas>
+      <div class="ui-overlay" id="ui-overlay" aria-hidden="true"></div>
+    </div>
     <div class="loading" id="loading">파츠 이미지를 불러오는 중...</div>
     <p class="sr-only" id="status" role="status" aria-live="polite"></p>
   </main>
@@ -99,6 +118,7 @@
 
     const canvas = document.getElementById("character");
     const stage = document.getElementById("stage");
+    const artboard = document.getElementById("artboard");
     const loading = document.getElementById("loading");
     const status = document.getElementById("status");
 
@@ -145,6 +165,23 @@
       });
     }
 
+    // Fit the ENTIRE source image into the screen, leaving no crop.
+    // When the screen has the same aspect ratio, the artboard fills it exactly.
+    function fitArtboard() {
+      if (!canvas.dataset.ready) return;
+      const viewportWidth = stage.clientWidth;
+      const viewportHeight = stage.clientHeight;
+      if (!viewportWidth || !viewportHeight) return;
+      const scale = Math.min(viewportWidth / canvas.width, viewportHeight / canvas.height);
+      artboard.style.width = (canvas.width * scale) + "px";
+      artboard.style.height = (canvas.height * scale) + "px";
+    }
+
+    window.addEventListener("resize", fitArtboard);
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(fitArtboard).observe(stage);
+    }
+
     async function renderCharacter() {
       try {
         const filenames = await getPartFilenames();
@@ -183,6 +220,8 @@
         status.textContent = drawn + "개 파츠 결합 · 원본 " + width + " × " + height + "px" +
           (failures.length ? " · " + failures.length + "개 파츠를 확인해 줘." : "");
         if (failures.length) console.warn("파츠 확인 필요:", failures);
+        canvas.dataset.ready = "true";
+        fitArtboard();
       } catch (error) {
         console.error(error);
         stage.classList.add("error");
