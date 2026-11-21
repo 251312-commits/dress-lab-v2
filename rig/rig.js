@@ -52,6 +52,64 @@
       this.render();
     }
 
+    // Trim the transparent margins of each full-size source PNG once.
+    // Drawing small sprites makes 30 fps animation much cheaper on phones.
+    // Coordinates and the original part stacking order do not change.
+    prepareFastSprites() {
+      if (typeof document === "undefined" || typeof document.createElement !== "function") return false;
+      const { width, height } = this.canvas;
+      const scratch = document.createElement("canvas");
+      scratch.width = width;
+      scratch.height = height;
+      const scratchCtx = scratch.getContext("2d", { willReadFrequently: true });
+      if (!scratchCtx || typeof scratchCtx.getImageData !== "function") return false;
+
+      const cropped = [];
+      try {
+        for (const layer of this.layers) {
+          scratchCtx.clearRect(0, 0, width, height);
+          scratchCtx.drawImage(layer.image, 0, 0);
+          const rgba = scratchCtx.getImageData(0, 0, width, height).data;
+          let left = width, top = height, right = -1, bottom = -1;
+          for (let y = 0; y < height; y++) {
+            const start = y * width * 4;
+            for (let x = 0; x < width; x++) {
+              if (rgba[start + x * 4 + 3] === 0) continue;
+              left = Math.min(left, x);
+              right = Math.max(right, x);
+              top = Math.min(top, y);
+              bottom = Math.max(bottom, y);
+            }
+          }
+          if (right < left) continue;
+          // Keep 1px transparent padding for antialiased edge preservation.
+          left = Math.max(0, left - 1);
+          top = Math.max(0, top - 1);
+          right = Math.min(width - 1, right + 1);
+          bottom = Math.min(height - 1, bottom + 1);
+          const w = right - left + 1, h = bottom - top + 1;
+          const sprite = document.createElement("canvas");
+          sprite.width = w;
+          sprite.height = h;
+          const spriteCtx = sprite.getContext("2d");
+          if (!spriteCtx) return false;
+          spriteCtx.drawImage(layer.image, left, top, w, h, 0, 0, w, h);
+          cropped.push({ filename: layer.filename, image: sprite, x: left, y: top });
+        }
+        if (cropped.length !== this.layers.length) return false;
+        this.layers = cropped;
+        this.render();
+        return true;
+      } catch (error) {
+        console.warn("Transparent sprite cropping failed; using original PNGs:", error);
+        return false;
+      } finally {
+        // Release the large temporary image buffer.
+        scratch.width = 0;
+        scratch.height = 0;
+      }
+    }
+
     getAngle(id) {
       return this.angles[id] ?? 0;
     }
@@ -88,7 +146,7 @@
 
       ctx.save();
       this.applyRootTransform(ctx);
-      for (const { filename, image } of this.layers) {
+      for (const { filename, image, x = 0, y = 0 } of this.layers) {
         if (!image) continue;
         ctx.save();
         const attached = Object.prototype.hasOwnProperty.call(this.config.parts, filename)
@@ -101,7 +159,7 @@
           ctx.rotate(angle * RAD);
           ctx.translate(-x, -y);
         }
-        ctx.drawImage(image, 0, 0);
+        ctx.drawImage(image, x, y);
         ctx.restore();
       }
       ctx.restore();
