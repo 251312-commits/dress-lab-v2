@@ -41,7 +41,7 @@
     panel.setAttribute("aria-label", "허벅지와 종아리 체형 조절");
     panel.innerHTML = [
       '<header><strong>다리 체형 조절 · 실험</strong><button type="button" id="shape-reset">초기화</button></header>',
-      '<p>골반 연결부는 허벅지 변화량의 30%, 무릎 위·아래는 허벅지와 종아리 변화량을 각각 30%씩 공유해.</p>',
+      '<p>허벅지와 골반 연결부는 같은 굵기로 변하고, 무릎 위·아래는 허벅지와 종아리 변화량을 각각 30%씩 공유해.</p>',
       '<div class="shape-row">',
         '<label for="shape-thighs">허벅지</label>',
         '<input id="shape-thighs" type="range" min="85" max="135" step="1" value="100">',
@@ -49,7 +49,7 @@
       '</div>',
       '<div class="shape-row">',
         '<label for="shape-calves">종아리</label>',
-        '<input id="shape-calves" type="range" min="85" max="135" step="1" value="100">',
+        '<input id="shape-calves" type="range" min="85" max="115" step="1" value="100">',
         '<output id="shape-calves-value" for="shape-calves">100%</output>',
       '</div>',
       '<p class="shape-note" id="shape-hip" role="status">골반 연결부: 100.0%</p>',
