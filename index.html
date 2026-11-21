@@ -93,6 +93,8 @@
   </main>
 
   <script src="./rig/rig.js?v=rig-20261122"></script>
+  <script src="./rig/body-shape.js?v=leg-shape-20261122"></script>
+  <script src="./rig/body-shape-debug.js?v=leg-controls-20261122"></script>
   <script src="./rig/motion.js?v=motions-20261122b"></script>
   <script src="./rig/debug.js?v=motion-controls-20261122d"></script>
   <script>
@@ -225,6 +227,7 @@
         const drawn = usableLayers.length;
         let rig = null;
         let motion = null;
+        let bodyShape = null;
         try {
           const response = await fetch("./rig/rig.json", { cache: "no-cache" });
           if (!response.ok) throw new Error("rig.json HTTP " + response.status);
@@ -240,6 +243,17 @@
           // Original full-canvas PNGs contain large transparent margins.
           // Crop just their drawing surfaces for inexpensive repeated frames.
           rig.prepareFastSprites();
+
+          // Prepare the original four leg sprites once. Shape changes only
+          // resample these leg images and never modify the source PNGs.
+          if (window.DressLabBodyShape) {
+            try {
+              bodyShape = new window.DressLabBodyShape(rig);
+              window.dressLabBodyShape = bodyShape;
+            } catch (shapeError) {
+              console.warn("국소 체형 변형 초기화 실패:", shapeError);
+            }
+          }
 
           if (window.DressLabMotion) {
             const idleAllowed = new URLSearchParams(window.location.search).get("idle") !== "0";
@@ -265,6 +279,9 @@
         const preview = params.get("rig") === "1" ||
                         params.get("motions") === "1" ||
                         Boolean(params.get("motion"));
+        if (bodyShape && (params.get("body") === "1" || params.get("shape") === "1")) {
+          window.DressLabBodyShapeDebug?.mount(bodyShape, motion);
+        }
         if (rig && preview) {
           window.DressLabRigDebug?.mount(rig, motion);
           const chosenMotion = params.get("motion");
