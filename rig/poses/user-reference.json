@@ -1,0 +1,16 @@
+{
+  "rigVersion": 1,
+  "angles": {
+    "torso": -6,
+    "shoulderL": -5,
+    "elbowL": 21,
+    "wristL": -19,
+    "shoulderR": -21,
+    "elbowR": 72,
+    "wristR": -27,
+    "hipL": -9,
+    "kneeL": 37,
+    "hipR": -7,
+    "kneeR": -3
+  }
+}
