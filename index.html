@@ -93,6 +93,7 @@
   </main>
 
   <script src="./rig/rig.js"></script>
+  <script src="./rig/motion.js"></script>
   <script src="./rig/debug.js"></script>
   <script>
     "use strict";
@@ -223,6 +224,7 @@
         }
         const drawn = usableLayers.length;
         let rig = null;
+        let motion = null;
         try {
           const response = await fetch("./rig/rig.json", { cache: "no-cache" });
           if (!response.ok) throw new Error("rig.json HTTP " + response.status);
@@ -234,6 +236,16 @@
             config: definition
           });
           window.dressLabRig = rig;
+
+          // Original full-canvas PNGs contain large transparent margins.
+          // Crop just their drawing surfaces for inexpensive repeated frames.
+          rig.prepareFastSprites();
+
+          if (window.DressLabMotion) {
+            const idleAllowed = new URLSearchParams(window.location.search).get("idle") !== "0";
+            motion = new window.DressLabMotion(rig, { autoStart: idleAllowed });
+            window.dressLabMotion = motion;
+          }
         } catch (rigError) {
           // Keep the original static doll functional if rig data is unavailable.
           console.warn("관절 리그 불러오기 실패 · 기존 합성 방식으로 표시:", rigError);
@@ -249,7 +261,7 @@
         fitArtboard();
         // Never show editing controls in the normal game view.
         if (rig && new URLSearchParams(window.location.search).get("rig") === "1") {
-          window.DressLabRigDebug?.mount(rig);
+          window.DressLabRigDebug?.mount(rig, motion);
         }
       } catch (error) {
         console.error(error);
