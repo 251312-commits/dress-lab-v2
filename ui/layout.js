@@ -1,0 +1,234 @@
+/* Dress Lab V2 • UI placement prototype.
+ * The base character remains drawn exclusively by index.html.
+ * Nothing here changes character pixels, appearance, body proportions or outfits.
+ */
+(() => {
+  "use strict";
+
+  const overlay = document.getElementById("ui-overlay");
+  const artboard = document.getElementById("artboard");
+  if (!overlay || !artboard) return;
+
+  // Renderable inline vector symbols: later these can be replaced by game assets.
+  const symbols = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" focusable="false">',
+    '<symbol id="dl2-shirt" viewBox="0 0 64 64"><path d="M18 11 L28 7 Q32 12 36 7 L46 11 L60 24 L51 35 L44 29 L44 57 Q32 55 20 57 L20 29 L13 35 L4 24 Z"/><path d="M28 7 Q32 18 36 7"/></symbol>',
+    '<symbol id="dl2-bow" viewBox="0 0 64 64"><path d="M29 27 C10 9 2 14 7 31 C9 42 22 40 29 34"/><path d="M35 27 C54 9 62 14 57 31 C55 42 42 40 35 34"/><rect x="28" y="26" width="8" height="11" rx="2"/><path d="M29 37 L17 57 L31 52 L34 38 M35 37 L48 57 L34 52 L31 38"/></symbol>',
+    '<symbol id="dl2-belt" viewBox="0 0 64 64"><rect x="5" y="24" width="54" height="17" rx="2"/><rect x="24" y="21" width="17" height="23" rx="1"/><path d="M13 24 V41 M51 24 V41 M29 33 H39"/></symbol>',
+    '<symbol id="dl2-pants" viewBox="0 0 64 64"><path d="M18 8 Q32 11 46 8 L53 55 L36 57 L32 33 L28 57 L11 55 Z"/><path d="M18 8 H46 M32 32 V20"/></symbol>',
+    '<symbol id="dl2-shoes" viewBox="0 0 64 64"><path d="M7 37 C13 33 19 31 23 34 L26 45 Q25 51 18 51 H7 Q2 48 5 43 Z"/><path d="M41 34 C45 31 52 33 57 37 L59 43 Q62 48 56 51 H45 Q38 51 38 45 Z"/><path d="M6 47 H25 M39 47 H58"/></symbol>',
+    '<symbol id="dl2-none" viewBox="0 0 64 64"><circle cx="32" cy="32" r="23"/><path d="M16 16 L48 48"/></symbol>',
+    '</svg>'
+  ].join("");
+
+  const tabs = [
+    ["color", "색상"],
+    ["clothes", "옷"],
+    ["review", "평가"]
+  ];
+  const items = [
+    ["shirt", "상의"],
+    ["bow", "장식"],
+    ["belt", "벨트"],
+    ["pants", "하의"],
+    ["shoes", "신발"],
+    ["none", "착용 해제"]
+  ];
+  const rooms = [
+    ["reception", "접수실"],
+    ["care", "케어룸"],
+    ["magic", "마법룸"],
+    ["dress", "드레스룸"]
+  ];
+  const channels = [
+    ["h", "색조", 0, 360, 0, 5],
+    ["s", "채도", 0, 100, 0, 5],
+    ["b", "밝기", 0, 100, 100, 5]
+  ];
+
+  const sliderMarkup = channels.map(([id, label, min, max, value, step]) => [
+    '<div class="ui-slider-row" data-channel="', id, '">',
+      '<output class="ui-slider-row__value" for="ui-range-', id, '" id="ui-value-', id, '">',
+        (id === "h" ? Math.round(value / 3.6) : value), '%',
+      '</output>',
+      '<button type="button" class="ui-slider-step" data-adjust="-1" aria-label="', label, ' 감소">−</button>',
+      '<input class="ui-slider-input" type="range" id="ui-range-', id, '" aria-label="', label, '" min="', min,
+        '" max="', max, '" value="', value, '" step="', step, '">',
+      '<button type="button" class="ui-slider-step" data-adjust="1" aria-label="', label, ' 증가">+</button>',
+    '</div>'
+  ].join("")).join("");
+
+  overlay.innerHTML = [
+    '<div class="ui-scene" id="ui-scene" aria-label="Dress Lab V2 인터페이스 배치 미리보기">',
+      symbols,
+
+      '<section class="ui-dialog" aria-label="대화창">',
+        '<svg viewBox="0 0 550 425" preserveAspectRatio="none" aria-hidden="true"><path d="M4 4 H546 V373 H313 L275 421 L237 373 H4 Z"/></svg>',
+        '<div class="ui-dialog__text" id="ui-dialog-text">대화창</div>',
+      '</section>',
+
+      '<aside class="ui-editor" aria-label="캐릭터 편집 사이드바">',
+        '<div class="ui-editor__header" aria-hidden="true"></div>',
+
+        '<section class="ui-colors" aria-label="컬러휠과 HSB 조절기 배치">',
+          '<div class="ui-wheel" role="img" aria-label="컬러휠이 들어갈 자리">',
+            '<div class="ui-wheel__inner"></div>',
+            '<div class="ui-wheel__diamond"></div>',
+            '<div class="ui-wheel__copy">COLOR WHEEL<small>HSB</small></div>',
+          '</div>',
+          '<output class="ui-hex" id="ui-hex" aria-label="색상 미리보기 코드">#FFFFFF</output>',
+          '<div class="ui-sliders" aria-label="HSB 슬라이더">', sliderMarkup, '</div>',
+        '</section>',
+
+        '<section class="ui-preview" aria-label="선택한 의상 카테고리 미리보기">',
+          '<svg class="ui-preview__icon" viewBox="0 0 64 64" aria-hidden="true">',
+            '<use id="ui-preview-use" href="#dl2-shirt"></use>',
+          '</svg>',
+          '<button type="button" class="ui-preview__check" id="ui-preview-check" aria-label="착용 표시 (UI 예시)" aria-pressed="true">',
+            '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M11 33 L26 48 L53 13"/></svg>',
+          '</button>',
+        '</section>',
+
+        '<h2 class="ui-outfit-heading">현재 착용중</h2>',
+        '<div class="ui-outfit-grid" role="group" aria-label="의상 종류 선택">',
+          items.map(([id, label], index) => [
+            '<button type="button" class="ui-outfit-item" data-item="', id,
+              '" aria-label="', label, '" aria-pressed="', index === 0, '">',
+              '<svg viewBox="0 0 64 64" aria-hidden="true"><use href="#dl2-', id, '"></use></svg>',
+            '</button>'
+          ].join("")).join(""),
+        '</div>',
+      '</aside>',
+
+      '<nav class="ui-tabs" aria-label="편집 카테고리">',
+        tabs.map(([id, label], index) => [
+          '<button type="button" class="ui-tabs__button" data-tab="', id,
+          '" aria-label="', label, '" aria-pressed="', index === 0, '">', label, '</button>'
+        ].join("")).join(""),
+      '</nav>',
+
+      '<div class="ui-actions" aria-label="대화 및 완료">',
+        '<button type="button" class="ui-action-dialog" id="ui-action-dialog">대화하기 (대화 옵션 나옴)</button>',
+        '<button type="button" class="ui-action-next" id="ui-action-next">',
+          '<span>완료</span>',
+          '<svg viewBox="0 0 160 55" aria-hidden="true"><path d="M6 27 H151 M112 4 L152 27 L112 51"/></svg>',
+        '</button>',
+      '</div>',
+
+      '<div class="ui-room-divider" aria-hidden="true"></div>',
+      '<nav class="ui-rooms" aria-label="방 이동">',
+        rooms.map(([id, label]) => [
+          '<button type="button" class="ui-room-button" data-room="', id, '"',
+            id === "dress" ? ' aria-current="page"' : '', '>', label, '</button>'
+        ].join("")).join(""),
+      '</nav>',
+      '<p class="sr-only" role="status" id="ui-selection-status" aria-live="polite"></p>',
+    '</div>'
+  ].join("");
+
+  const scene = document.getElementById("ui-scene");
+  const bubble = document.getElementById("ui-dialog-text");
+  const selectionStatus = document.getElementById("ui-selection-status");
+
+  // Scale in perfect sync with the 1206 × 2622 base artboard.
+  // Since only the entire artboard is scaled, image and UI coordinates stay aligned.
+  function sizeUi() {
+    const width = artboard.getBoundingClientRect().width;
+    const height = artboard.getBoundingClientRect().height;
+    if (!(width > 0 && height > 0)) return;
+    const scale = Math.min(width / 1206, height / 2622);
+    scene.style.transform = "scale(" + scale + ")";
+  }
+  window.addEventListener("resize", sizeUi);
+  if ("ResizeObserver" in window) new ResizeObserver(sizeUi).observe(artboard);
+  sizeUi();
+
+  // Selection state only: these tabs and rooms do not change the game screen yet.
+  overlay.addEventListener("click", (event) => {
+    const tab = event.target.closest(".ui-tabs__button");
+    if (tab) {
+      overlay.querySelectorAll(".ui-tabs__button").forEach(button => {
+        button.setAttribute("aria-pressed", String(button === tab));
+      });
+      selectionStatus.textContent = tab.getAttribute("aria-label") + " 카테고리 선택";
+      return;
+    }
+
+    const room = event.target.closest(".ui-room-button");
+    if (room) {
+      overlay.querySelectorAll(".ui-room-button").forEach(button => {
+        if (button === room) button.setAttribute("aria-current", "page");
+        else button.removeAttribute("aria-current");
+      });
+      selectionStatus.textContent = room.textContent + " 선택 · 방 이동 기능 미연결";
+      return;
+    }
+
+    const item = event.target.closest(".ui-outfit-item");
+    if (item) {
+      overlay.querySelectorAll(".ui-outfit-item").forEach(button => {
+        button.setAttribute("aria-pressed", String(button === item));
+      });
+      document.getElementById("ui-preview-use").setAttribute("href", "#dl2-" + item.dataset.item);
+      document.getElementById("ui-preview-check").setAttribute("aria-pressed", "false");
+      selectionStatus.textContent = item.getAttribute("aria-label") + " 미리보기";
+      return;
+    }
+
+    const check = event.target.closest("#ui-preview-check");
+    if (check) {
+      const pressed = check.getAttribute("aria-pressed") === "true";
+      check.setAttribute("aria-pressed", String(!pressed));
+      selectionStatus.textContent = "착용 표시만 변경됨 · 의상 교체 기능 미연결";
+      return;
+    }
+
+    if (event.target.closest("#ui-action-dialog")) {
+      bubble.textContent = bubble.textContent === "대화 옵션 영역 (준비 중)" ?
+        "대화창" : "대화 옵션 영역 (준비 중)";
+      return;
+    }
+    if (event.target.closest("#ui-action-next")) {
+      bubble.textContent = "완료 기능은 아직 연결되지 않았어.";
+      return;
+    }
+
+    const stepper = event.target.closest(".ui-slider-step");
+    if (stepper) {
+      const input = stepper.closest(".ui-slider-row").querySelector(".ui-slider-input");
+      input.value = String(Math.max(Number(input.min), Math.min(Number(input.max),
+        Number(input.value) + Number(stepper.dataset.adjust) * Number(input.step))));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+
+  // Local HSB widget preview only. It does NOT recolor the doll PNGs.
+  function updateColorPreview() {
+    const h = Number(document.getElementById("ui-range-h").value);
+    const s = Number(document.getElementById("ui-range-s").value) / 100;
+    const v = Number(document.getElementById("ui-range-b").value) / 100;
+    const c = s * v;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = v - c;
+    let rgb;
+    if (h < 60) rgb = [c, x, 0];
+    else if (h < 120) rgb = [x, c, 0];
+    else if (h < 180) rgb = [0, c, x];
+    else if (h < 240) rgb = [0, x, c];
+    else if (h < 300) rgb = [x, 0, c];
+    else rgb = [c, 0, x];
+    const hex = "#" + rgb.map(n => Math.round((n + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
+    document.getElementById("ui-hex").textContent = hex;
+
+    for (const [id] of channels) {
+      const value = Number(document.getElementById("ui-range-" + id).value);
+      document.getElementById("ui-value-" + id).textContent =
+        (id === "h" ? Math.round(value / 3.6) : value) + "%";
+    }
+  }
+
+  overlay.querySelectorAll(".ui-slider-input").forEach(input => {
+    input.addEventListener("input", updateColorPreview);
+  });
+  updateColorPreview();
+})();
