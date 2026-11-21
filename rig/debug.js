@@ -24,6 +24,15 @@
       "-webkit-overflow-scrolling:touch}",
       "#rig-debug-panel[data-collapsed='true'] .rig-body{display:none}",
       "#rig-debug-panel .rig-controls{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}",
+      "#rig-debug-panel .rig-quick-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));",
+      "gap:6px;padding:9px 10px 5px;background:#fff8f1;border-bottom:1px solid #e9ded5}",
+      "#rig-debug-panel .rig-quick-actions button{font-size:12px;font-weight:760;",
+      "line-height:1.25;min-height:42px;padding:6px 4px;background:#fff;border-color:#c6b5aa}",
+      "#rig-debug-panel .rig-quick-actions button:active{background:#ffe7cd}",
+      "#rig-debug-panel .rig-quick-actions button[aria-pressed='true']{background:#f9e2ca;border-color:#9c7163}",
+      "#rig-debug-panel .rig-motion-hint{padding:3px 11px 8px;background:#fff8f1;",
+      "font-size:11px;color:#66554a;line-height:1.3;margin:0}",
+      "#rig-debug-panel[data-collapsed='true'] .rig-motion-hint{border-bottom:0}",
       "#rig-debug-panel .rig-flags{display:flex;flex-wrap:wrap;gap:11px;margin-bottom:8px}",
       "#rig-debug-panel .rig-flags label{display:flex;align-items:center;gap:5px}",
       "#rig-debug-panel .rig-row{display:grid;grid-template-columns:88px 1fr 43px;align-items:center;gap:6px;",
@@ -44,7 +53,16 @@
     section.id = "rig-debug-panel";
     section.setAttribute("aria-label", "관절 회전 테스트");
     section.innerHTML = [
-      '<header><strong>관절 테스트 · 11축</strong><button type="button" id="rig-collapse" aria-expanded="true">접기</button></header>',
+      '<header><strong>움직임 미리보기</strong><button type="button" id="rig-collapse" aria-expanded="true">상세 조절 접기</button></header>',
+      '<nav class="rig-quick-actions" aria-label="큰 동작 바로 실행">',
+        '<button type="button" data-rig-action="showPose">첨부 포즈 연기</button>',
+        '<button type="button" data-rig-action="bigWave">큰 손짓</button>',
+        '<button type="button" data-rig-action="hop">한발 콩콩</button>',
+        '<button type="button" data-rig-action="dance">좌우 율동</button>',
+        '<button type="button" data-rig-action="stretch">기지개</button>',
+        '<button type="button" id="rig-quick-idle">숨쉬기 idle</button>',
+      '</nav>',
+      '<p class="rig-motion-hint" id="rig-motion-hint" role="status" aria-live="polite">큰 동작 버튼을 누르면 즉시 재생돼. 아래 옵션은 펼쳐서 볼 수 있어.</p>',
       '<div class="rig-body">',
         '<p class="rig-subtitle">자동 움직임 · 탄성 애니메이션</p>',
         '<div class="rig-controls">',
@@ -65,15 +83,6 @@
           '<button type="button" data-rig-pose="sway">기울기</button>',
           '<button type="button" id="rig-export">포즈 저장</button>',
         '</div>',
-        '<p class="rig-subtitle">큰 동작 · 첨부한 포즈 기반</p>',
-        '<div class="rig-controls">',
-          '<button type="button" data-rig-action="showPose">첨부 포즈 연기</button>',
-          '<button type="button" data-rig-action="bigWave">큰 손짓</button>',
-          '<button type="button" data-rig-action="hop">한발 콩콩</button>',
-          '<button type="button" data-rig-action="dance">좌우 율동</button>',
-          '<button type="button" data-rig-action="stretch">기지개</button>',
-        '</div>',
-        '<p class="rig-note" id="rig-motion-hint" role="status">큰 동작은 버튼을 누를 때만 재생돼. 평소에는 숨쉬기 idle이 유지돼.</p>',
         '<label class="rig-strength">애니메이션 강도 <input id="rig-strength" type="range" min="0.35" max="1.6" step="0.05" value="1"><output id="rig-strength-value">1.00×</output></label>',
         '<div class="rig-flags">',
           '<label><input type="checkbox" id="rig-show-dots" checked> 축 표시</label>',
@@ -89,6 +98,15 @@
         '<p class="rig-note">각도만 시험하는 개발용 화면이다. 머리·목은 별도의 회전축이 없다. 관절 접합부는 추후 보정할 수 있다.</p>',
       '</div>'
     ].join("");
+    // The large-motion dock stays visible even when the detailed controls
+    // are collapsed or too long to fit on a small phone screen.
+    const motionOnly = new URLSearchParams(window.location.search).get("motions") === "1";
+    if (motionOnly) {
+      section.dataset.collapsed = "true";
+      const toggle = section.querySelector("#rig-collapse");
+      toggle.textContent = "세부 조절 보기";
+      toggle.setAttribute("aria-expanded", "false");
+    }
     document.body.append(section);
 
     const inputs = [...section.querySelectorAll("[data-rig-joint]")];
@@ -116,7 +134,7 @@
     section.querySelector("#rig-collapse").addEventListener("click", event => {
       const collapsed = section.dataset.collapsed !== "true";
       section.dataset.collapsed = String(collapsed);
-      event.currentTarget.textContent = collapsed ? "펼치기" : "접기";
+      event.currentTarget.textContent = collapsed ? "세부 조절 보기" : "상세 조절 접기";
       event.currentTarget.setAttribute("aria-expanded", String(!collapsed));
     });
     section.querySelector("#rig-neutral").addEventListener("click", () => {
@@ -124,9 +142,13 @@
       else rig.reset();
       sync();
     });
-    section.querySelector("#rig-idle").addEventListener("click", () => {
-      motionController?.resumeIdle();
-    });
+    for (const button of [section.querySelector("#rig-idle"), section.querySelector("#rig-quick-idle")]) {
+      button.addEventListener("click", () => {
+        motionController?.resumeIdle();
+        section.querySelectorAll(".rig-quick-actions [data-rig-action]").forEach(b => b.setAttribute("aria-pressed", "false"));
+        section.querySelector("#rig-motion-hint").textContent = "숨쉬기 idle로 돌아왔어.";
+      });
+    }
     section.querySelector("#rig-stop").addEventListener("click", () => {
       stopMotion();
       sync();
@@ -146,6 +168,9 @@
         hint.textContent = played
           ? button.textContent + " 재생 중 · 끝나면 숨쉬기 idle로 돌아가."
           : "재생할 수 없어. 기기의 '움직임 줄이기' 설정 또는 리그 상태를 확인해 줘.";
+        section.querySelectorAll(".rig-quick-actions [data-rig-action]").forEach(b => {
+          b.setAttribute("aria-pressed", String(played && b.dataset.rigAction === button.dataset.rigAction));
+        });
       });
     }
     const power = section.querySelector("#rig-strength");
@@ -156,7 +181,12 @@
       section.querySelector("#rig-strength-value").textContent = n.toFixed(2) + "×";
     });
     section.querySelector("#rig-strength-value").textContent = Number(power.value).toFixed(2) + "×";
-    if (motionController) motionController.subscribe(sync);
+    if (motionController) motionController.subscribe(() => {
+      sync();
+      if (!motionController.action) {
+        section.querySelectorAll(".rig-quick-actions [data-rig-action]").forEach(button => button.setAttribute("aria-pressed", "false"));
+      }
+    });
 
     section.querySelector("#rig-show-dots").addEventListener("change", event => {
       rig.showMarkers(event.target.checked);
