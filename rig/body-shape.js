@@ -1,14 +1,12 @@
-/* Dress Lab V2 — independent leg-silhouette deformation.
+/* Dress Lab V2 — locally linked body-shape deformation.
  *
- * This is deliberately NOT the v1 whole-image warp. Only four leg PNG layers
- * are resampled, one horizontal image row at a time. The hip boundary
- * follows the full thigh width change; the top and bottom knee pieces receive
- * exactly 30% of EACH thigh and calf change, so the seam uses one shared
- * scale. The foot returns to its original width.
+ * Each isolated PNG piece is resampled in horizontal rows, never warped as a
+ * whole character. UpperTorso/Bust -> TorsoJoint (waist) -> LowerTorso ->
+ * Hips -> both upper legs -> both lower legs share smooth boundary values.
  *
- * Source PNGs and joint coordinates remain untouched. The output sprites
- * retain their source-pixel coordinates and work with the existing rig,
- * idle animation and large joint poses.
+ * Hip/shoulder positions follow the silhouette width (and carry their child
+ * joints + sprite placements); the neutral 100% shape stays pixel identical.
+ * Existing animation rig, sprites and skin-color data are retained.
  */
 (() => {
   "use strict";
@@ -20,10 +18,22 @@
   };
 
   const PARTS = Object.freeze({
+    "03-Bust.PNG": ["bust", null],
+    "04-UpperTorso.PNG": ["upperTorso", null],
+    "05-LowerTorso.PNG": ["lowerTorso", null],
+    "06-TorsoJoint.PNG": ["waistJoint", null],
+    "07-Hips.PNG": ["pelvis", null],
     "08-UpperLeg(L).PNG": ["upper", "L"],
     "09-UpperLeg(R).PNG": ["upper", "R"],
     "10-LowerLeg(L).PNG": ["lower", "L"],
     "11-LowerLeg(R).PNG": ["lower", "R"]
+  });
+  const LIMITS = Object.freeze({
+    upperTorso: Object.freeze([90, 118]),
+    waist: Object.freeze([85, 120]),
+    hips: Object.freeze([90, 120]),
+    thighs: Object.freeze([85, 135]),
+    calves: Object.freeze([85, 115])
   });
 
   class DressLabBodyShape {
@@ -32,11 +42,19 @@
         throw new Error("DressLabBodyShape requires an initialized DressLabRig");
       }
       this.rig = rig;
+      this.upperTorso = 100;
+      this.waist = 100;
+      this.hips = 100;
       this.thighs = 100;
       this.calves = 100;
+      this.limits = LIMITS;
       this.hipInfluence = 1.00;
       this.kneeInfluence = 0.30;
       this.sources = new Map();
+      this.baseLayers = new Map(rig.layers.map(layer => [layer.filename, { ...layer }]));
+      this.basePivots = Object.fromEntries(
+        Object.entries(rig.config.pivots).map(([id, pivot]) => [id, { x: pivot.x, y: pivot.y }])
+      );
       this.canvasesBuilt = 0;
 
       for (const layer of rig.layers) {
@@ -83,13 +101,16 @@
         if (!any) throw new Error("Empty leg image: " + layer.filename);
         this.sources.set(layer.filename, source);
       }
-      if (this.sources.size !== 4) {
-        throw new Error("Leg part set is incomplete: expected four separate PNGs");
+      if (this.sources.size !== Object.keys(PARTS).length) {
+        throw new Error("Body part set is incomplete: expected nine separate PNGs");
       }
     }
 
     getState() {
       return {
+        upperTorso: this.upperTorso,
+        waist: this.waist,
+        hips: this.hips,
         thighs: this.thighs,
         calves: this.calves,
         hipInfluence: this.hipInfluence,
@@ -99,8 +120,10 @@
       };
     }
 
+    // The pelvis and thigh multipliers share the same hip attachment width.
+    // If hips is neutral, this is exactly the former thigh-only hip rule.
     hipScale() {
-      return 1 + this.hipInfluence * (this.thighs / 100 - 1);
+      return (this.hips / 100) * (1 + this.hipInfluence * (this.thighs / 100 - 1));
     }
 
     kneeScale() {
@@ -110,43 +133,62 @@
       return 1 + this.kneeInfluence * dThigh + this.kneeInfluence * dCalf;
     }
 
-    // All widths are relative to the ORIGINAL local outline, never to a
-    // previously changed sprite. This prevents cumulative deformation.
+    // Each joined piece uses the same boundary scale as its neighbor.
+    // Y coordinates remain unchanged; the existing torso rotation pivot
+    // and hip/knee angles continue to work on all shaped sprites.
     factor(kind, side, y, source) {
-      const upper = kind === "upper";
-      const hip = this.rig.config.pivots["hip" + side].y;
-      const knee = this.rig.config.pivots["knee" + side].y;
-      const dThigh = this.thighs / 100 - 1;
-      const dCalf = this.calves / 100 - 1;
-      const kneeDelta = this.kneeScale() - 1;
+      const upperScale = this.upperTorso / 100;
+      const waistScale = this.waist / 100;
+      const pelvisScale = this.hips / 100;
+      const hipConnection = this.hipScale();
+      const thighScale = this.thighs / 100;
+      const calfScale = this.calves / 100;
+      const kneeConnection = this.kneeScale();
 
-      if (upper) {
-        const t = clamp((y - hip) / Math.max(1, knee - hip), 0, 1);
-        // The hip attachment and thigh body share the same full thigh
-        // adjustment. Blend only near the knee so the two knee pieces keep
-        // their existing common 30%-per-control width.
-        const kneeBlend = smoothstep(0.70, 0.90, t);
-        return 1 + dThigh * (1 - kneeBlend) + kneeDelta * kneeBlend;
+      if (kind === "bust" || kind === "upperTorso") {
+        // Wide shoulders/chest -> the waist connector's exact multiplier.
+        return upperScale + (waistScale - upperScale) *
+          smoothstep(1055, 1166.5, y);
+      }
+      if (kind === "waistJoint") return waistScale;
+      if (kind === "lowerTorso") {
+        // The lower torso's top is waist-sized; its bottom follows the hips.
+        return waistScale + (pelvisScale - waistScale) *
+          smoothstep(1166.5, 1280, y);
+      }
+      if (kind === "pelvis") {
+        // At the pelvis top match LowerTorso. At the hip attachment match
+        // UpperLeg, even when both hip and thigh controls are changed.
+        return pelvisScale + (hipConnection - pelvisScale) *
+          smoothstep(1260, 1367.8, y);
       }
 
-      // The lower-leg PNG includes the foot. Its bottom ~16% must remain
-      // fixed to avoid flattening/recoloring the toes/foot contours.
+      const hip = this.rig.config.pivots["hip" + side].y;
+      const knee = this.rig.config.pivots["knee" + side].y;
+      if (kind === "upper") {
+        const t = clamp((y - hip) / Math.max(1, knee - hip), 0, 1);
+        const toThigh = smoothstep(0.04, 0.32, t);
+        const toKnee = smoothstep(0.70, 0.90, t);
+        const upperMiddle = hipConnection + (thighScale - hipConnection) * toThigh;
+        return upperMiddle + (kneeConnection - upperMiddle) * toKnee;
+      }
+
+      // Keep the existing knee-coupling formula and protect the foot.
       const footBottom = source.y + source.h - 1;
       const ankle = knee + (footBottom - knee) * 0.84;
       const t = clamp((y - knee) / Math.max(1, ankle - knee), 0, 1);
-      // Knee-side rows start at exactly the upper-leg knee scale; the
-      // shared width holds briefly before fading into the calf contour.
       const kneeWeight = 1 - smoothstep(0.10, 0.36, t);
       const calfBulge = smoothstep(0.18, 0.43, t) *
         (1 - smoothstep(0.52, 0.95, t));
-      return 1 + kneeDelta * kneeWeight + dCalf * calfBulge;
+      return 1 + (kneeConnection - 1) * kneeWeight +
+        (calfScale - 1) * calfBulge;
     }
 
     // A row-based, smoothly interpolated horizontal mesh: one source image
     // row maps to a stretched/shrunk output row. Vertical coordinates do not
     // change, so hip/knee pivots and animations stay in the same coordinate
     // system. No new seams are introduced by resampling in the Y direction.
-    deform(source, kind, side) {
+    deform(source, kind, side, offsetX = 0) {
       const rows = source.rows;
       let minX = Infinity, maxX = -Infinity, changed = false;
       const scales = new Float32Array(source.h);
@@ -162,7 +204,7 @@
         maxX = Math.max(maxX, b);
       }
       if (!changed) return { filename: source.filename,
-        image: source.image, x: source.x, y: source.y };
+        image: source.image, x: source.x + offsetX, y: source.y };
 
       // Expand by 3 pixels to preserve antialiased silhouette edges.
       const originX = Math.floor(minX) - 3;
@@ -187,35 +229,72 @@
       }
       this.canvasesBuilt++;
       return { filename: source.filename, image: target,
-        x: originX, y: source.y };
+        x: originX + offsetX, y: source.y };
     }
 
     setShape(values = {}) {
-      const nextThighs = values.thighs === undefined ? this.thighs : Number(values.thighs);
-      const nextCalves = values.calves === undefined ? this.calves : Number(values.calves);
-      if (!Number.isFinite(nextThighs) || !Number.isFinite(nextCalves)) {
-        return false;
+      const changes = {};
+      for (const [key, [min, max]] of Object.entries(LIMITS)) {
+        const n = values[key] === undefined ? this[key] : Number(values[key]);
+        if (!Number.isFinite(n)) return false;
+        changes[key] = clamp(n, min, max);
       }
-      const thighs = clamp(nextThighs, 85, 135);
-      const calves = clamp(nextCalves, 85, 115);
-      if (this.thighs === thighs && this.calves === calves) return true;
+      if (Object.keys(changes).every(key => changes[key] === this[key])) return true;
+      Object.assign(this, changes);
 
-      this.thighs = thighs;
-      this.calves = calves;
+      // A widened upper torso carries its corresponding shoulder, elbow,
+      // wrist and the three arm sprites together. Hips carry both legs in
+      // the same way. This avoids gaps caused by moving only the torso edge.
+      const shoulderOffsets = {};
+      const hipOffsets = {};
+      const centerX = this.basePivots.torso.x;
+      for (const side of ["L", "R"]) {
+        shoulderOffsets[side] =
+          (this.basePivots["shoulder" + side].x - centerX) *
+          (this.upperTorso / 100 - 1);
+        hipOffsets[side] =
+          (this.basePivots["hip" + side].x - centerX) *
+          (this.hips / 100 - 1);
+      }
+
       const output = new Map();
       for (const [filename, source] of this.sources) {
         const [kind, side] = PARTS[filename];
-        output.set(filename, this.deform(source, kind, side));
+        output.set(filename, this.deform(source, kind, side,
+          kind === "upper" || kind === "lower" ? hipOffsets[side] : 0));
       }
-      // Replace only the four leg sprites atomically; the other 13 originals
-      // keep their identity and are never deformed by this controller.
-      this.rig.layers = this.rig.layers.map(layer => output.get(layer.filename) || layer);
+
+      // Preserve source pixels for arms and apply only a rigid translation.
+      for (const [filename, base] of this.baseLayers) {
+        const match = filename.match(/(?:UpperArm|LowerArm|hand|Hand)\((L|R)\)/);
+        if (match) {
+          output.set(filename, { ...base, x: (base.x || 0) + shoulderOffsets[match[1]] });
+        }
+      }
+
+      for (const side of ["L", "R"]) {
+        for (const id of ["shoulder", "elbow", "wrist"]) {
+          this.rig.config.pivots[id + side].x =
+            this.basePivots[id + side].x + shoulderOffsets[side];
+        }
+        for (const id of ["hip", "knee"]) {
+          this.rig.config.pivots[id + side].x =
+            this.basePivots[id + side].x + hipOffsets[side];
+        }
+      }
+
+      this.rig.layers = this.rig.layers.map(layer =>
+        output.get(layer.filename) || this.baseLayers.get(layer.filename) || layer
+      );
       this.rig.render();
       return true;
     }
 
     reset() {
-      return this.setShape({ thighs: 100, calves: 100 });
+      return this.setShape({
+        upperTorso: 100, waist: 100, hips: 100,
+        thighs: 100, calves: 100
+      });
     }
   }
 
