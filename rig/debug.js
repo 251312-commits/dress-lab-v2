@@ -4,7 +4,7 @@
 (() => {
   "use strict";
 
-  function mount(rig) {
+  function mount(rig, motionController = window.dressLabMotion) {
     if (!rig || document.getElementById("rig-debug-panel")) return;
 
     const style = document.createElement("style");
@@ -31,6 +31,10 @@
       "#rig-debug-panel .rig-row input{width:100%;min-width:0;accent-color:#6485ba}",
       "#rig-debug-panel .rig-row output{text-align:right;font-variant-numeric:tabular-nums}",
       "#rig-debug-panel .rig-note{margin:8px 0 0;color:#716a67;font-size:11px}",
+      "#rig-debug-panel .rig-subtitle{margin:11px 0 5px;font-weight:760;font-size:12px}",
+      "#rig-debug-panel .rig-strength{width:100%;display:flex;gap:7px;align-items:center;justify-content:space-between}",
+      "#rig-debug-panel .rig-strength input{flex:1;min-width:40px;accent-color:#6485ba}",
+      "#rig-debug-panel .rig-strength output{min-width:35px;text-align:right}",
       "@media(max-width:600px){#rig-debug-panel{max-height:55dvh}#rig-debug-panel .rig-body{max-height:calc(55dvh - 48px)}}"
     ].join("");
     document.head.append(style);
@@ -42,12 +46,25 @@
     section.innerHTML = [
       '<header><strong>관절 테스트 · 11축</strong><button type="button" id="rig-collapse" aria-expanded="true">접기</button></header>',
       '<div class="rig-body">',
+        '<p class="rig-subtitle">자동 움직임 · 탄성 애니메이션</p>',
+        '<div class="rig-controls">',
+          '<button type="button" id="rig-idle">숨쉬기 idle</button>',
+          '<button type="button" data-rig-action="boing">보잉!</button>',
+          '<button type="button" data-rig-action="wave">손 흔들기</button>',
+          '<button type="button" data-rig-action="hello">인사하기</button>',
+          '<button type="button" id="rig-stop">정지</button>',
+        '</div>',
+        '<p class="rig-subtitle">기본 포즈</p>',
         '<div class="rig-controls">',
           '<button type="button" id="rig-neutral">기본 자세</button>',
-          '<button type="button" id="rig-pose">팔 들기</button>',
-          '<button type="button" id="rig-wave">손 흔들기</button>',
+          '<button type="button" data-rig-pose="relaxed">편안하게</button>',
+          '<button type="button" data-rig-pose="shy">수줍게</button>',
+          '<button type="button" data-rig-pose="greeting">팔 들기</button>',
+          '<button type="button" data-rig-pose="cheer">만세</button>',
+          '<button type="button" data-rig-pose="sway">기울기</button>',
           '<button type="button" id="rig-export">포즈 저장</button>',
         '</div>',
+        '<label class="rig-strength">보잉 강도 <input id="rig-strength" type="range" min="0.35" max="1.6" step="0.05" value="1"><output id="rig-strength-value">1.00×</output></label>',
         '<div class="rig-flags">',
           '<label><input type="checkbox" id="rig-show-dots" checked> 축 표시</label>',
           '<label><input type="checkbox" id="rig-show-full"> 원본 참고그림</label>',
@@ -75,13 +92,9 @@
       }
     };
 
-    let rafId = 0;
-    function stopMotion() {
-      if (!rafId) return;
-      cancelAnimationFrame(rafId);
-      rafId = 0;
-      section.querySelector("#rig-wave").textContent = "손 흔들기";
-    }
+    const stopMotion = () => {
+      if (motionController) motionController.pause();
+    };
 
     for (const input of inputs) {
       input.addEventListener("input", () => {
@@ -97,31 +110,38 @@
       event.currentTarget.setAttribute("aria-expanded", String(!collapsed));
     });
     section.querySelector("#rig-neutral").addEventListener("click", () => {
-      stopMotion(); rig.reset(); sync();
-    });
-    section.querySelector("#rig-pose").addEventListener("click", () => {
-      stopMotion();
-      rig.setPose({ shoulderR:-60, elbowR:-45, wristR:10 }, true);
+      if (motionController) motionController.pause(true);
+      else rig.reset();
       sync();
     });
-
-    section.querySelector("#rig-wave").addEventListener("click", () => {
-      if (rafId) { stopMotion(); return; }
-      section.querySelector("#rig-wave").textContent = "정지";
-      const start = performance.now();
-      function tick(now) {
-        const t = (now-start)/1000;
-        rig.setPose({
-          shoulderR:-61,
-          elbowR:-48 + 17 * Math.sin(t * Math.PI * 3.3),
-          wristR:12 + 12 * Math.sin(t * Math.PI * 3.3 + 1)
-        }, true);
-        sync();
-        if (t < 2.7) rafId = requestAnimationFrame(tick);
-        else { rafId = 0; section.querySelector("#rig-wave").textContent="손 흔들기"; }
-      }
-      rafId = requestAnimationFrame(tick);
+    section.querySelector("#rig-idle").addEventListener("click", () => {
+      motionController?.resumeIdle();
     });
+    section.querySelector("#rig-stop").addEventListener("click", () => {
+      stopMotion();
+      sync();
+    });
+    for (const button of section.querySelectorAll("[data-rig-pose]")) {
+      button.addEventListener("click", () => {
+        if (motionController) motionController.setPose(button.dataset.rigPose);
+        else if (window.DressLabMotionPoses) rig.setPose(window.DressLabMotionPoses[button.dataset.rigPose], true);
+        sync();
+      });
+    }
+    for (const button of section.querySelectorAll("[data-rig-action]")) {
+      button.addEventListener("click", () => {
+        motionController?.play(button.dataset.rigAction);
+      });
+    }
+    const power = section.querySelector("#rig-strength");
+    if (motionController) power.value = String(motionController.intensity);
+    power.addEventListener("input", () => {
+      const n = Number(power.value);
+      motionController?.setIntensity(n);
+      section.querySelector("#rig-strength-value").textContent = n.toFixed(2) + "×";
+    });
+    section.querySelector("#rig-strength-value").textContent = Number(power.value).toFixed(2) + "×";
+    if (motionController) motionController.subscribe(sync);
 
     section.querySelector("#rig-show-dots").addEventListener("change", event => {
       rig.showMarkers(event.target.checked);
