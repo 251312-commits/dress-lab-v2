@@ -25,6 +25,10 @@
       this.layers = [...layers].sort((a, b) => numberOf(b.filename) - numberOf(a.filename) ||
         a.filename.localeCompare(b.filename));
       this.angles = {};
+      // A tiny whole-character squash/stretch is applied only to the assembled
+      // image. Individual limbs remain rigid; the regular zero pose is exact.
+      this.root = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
+      this.rootAnchor = { x: 328.6, y: 2050 };
       this.markersVisible = false;
       this.referenceImage = null;
       this.referenceVisible = false;
@@ -64,6 +68,17 @@
       return chain.reverse();
     }
 
+    applyRootTransform(ctx) {
+      const { x, y, scaleX, scaleY } = this.root;
+      if (x !== 0 || y !== 0) ctx.translate(x, y);
+      if (scaleX !== 1 || scaleY !== 1) {
+        const { x: px, y: py } = this.rootAnchor;
+        ctx.translate(px, py);
+        ctx.scale(scaleX, scaleY);
+        ctx.translate(-px, -py);
+      }
+    }
+
     // Apply local joint rotations in parent -> child order to a single part.
     render() {
       const { ctx, canvas } = this;
@@ -71,6 +86,8 @@
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      ctx.save();
+      this.applyRootTransform(ctx);
       for (const { filename, image } of this.layers) {
         if (!image) continue;
         ctx.save();
@@ -87,6 +104,7 @@
         ctx.drawImage(image, 0, 0);
         ctx.restore();
       }
+      ctx.restore();
 
       // Full.PNG is never part of the character. It can only be shown in debug mode.
       if (this.referenceVisible && this.referenceImage) {
@@ -96,8 +114,31 @@
         ctx.restore();
       }
 
-      if (this.markersVisible) this.drawMarkers();
+      if (this.markersVisible) {
+        ctx.save();
+        this.applyRootTransform(ctx);
+        this.drawMarkers();
+        ctx.restore();
+      }
       ctx.restore();
+    }
+
+    // Update every angle + the cartoon bounce transform with one canvas redraw.
+    // Root values are in source-image pixels; limits prevent accidental warping.
+    setFrame(pose = {}, root = {}) {
+      for (const [id, joint] of Object.entries(this.config.pivots)) {
+        const value = Object.prototype.hasOwnProperty.call(pose, id) ? Number(pose[id]) : 0;
+        this.angles[id] = Number.isFinite(value) ? limit(value, joint.min, joint.max) : 0;
+      }
+      const safe = (value, fallback, lo, hi) =>
+        Number.isFinite(Number(value)) ? limit(Number(value), lo, hi) : fallback;
+      this.root = {
+        x: safe(root.x ?? 0, 0, -50, 50),
+        y: safe(root.y ?? 0, 0, -60, 60),
+        scaleX: safe(root.scaleX ?? 1, 1, 0.97, 1.03),
+        scaleY: safe(root.scaleY ?? 1, 1, 0.97, 1.03)
+      };
+      this.render();
     }
 
     setAngle(id, angle) {
@@ -118,7 +159,7 @@
       this.render();
     }
 
-    reset() { this.setPose({}, true); }
+    reset() { this.setFrame({}, {}); }
 
     showMarkers(visible) {
       this.markersVisible = Boolean(visible);
@@ -151,7 +192,7 @@
     drawMarkers() {
       const ctx = this.ctx;
       ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      // Keep the active root translation/scale so markers follow the character.
       for (const id of Object.keys(this.config.pivots)) {
         const p = this.pointFor(id);
         if (!p) continue;
