@@ -220,7 +220,11 @@
       URL.revokeObjectURL(url);
     });
 
-    rig.showMarkers(true);
+    // The compact motion preview is for watching gestures, not inspecting axes.
+    // Keep the reference markers only in the detailed rig tester.
+    const showDots = !motionOnly;
+    section.querySelector("#rig-show-dots").checked = showDots;
+    rig.showMarkers(showDots);
     window.addEventListener("pagehide", stopMotion, { once:true });
   }
 
