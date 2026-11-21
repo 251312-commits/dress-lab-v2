@@ -92,9 +92,9 @@
     <p class="sr-only" id="status" role="status" aria-live="polite"></p>
   </main>
 
-  <script src="./rig/rig.js"></script>
-  <script src="./rig/motion.js"></script>
-  <script src="./rig/debug.js"></script>
+  <script src="./rig/rig.js?v=rig-20261122"></script>
+  <script src="./rig/motion.js?v=motions-20261122b"></script>
+  <script src="./rig/debug.js?v=motion-controls-20261122b"></script>
   <script>
     "use strict";
 
@@ -259,9 +259,18 @@
         if (failures.length) console.warn("파츠 확인 필요:", failures);
         canvas.dataset.ready = "true";
         fitArtboard();
-        // Never show editing controls in the normal game view.
-        if (rig && new URLSearchParams(window.location.search).get("rig") === "1") {
+        // Leave the default game screen unchanged. The motion-only mode opens
+        // a compact, always-visible five-button dock; ?rig=1 shows full controls.
+        const params = new URLSearchParams(window.location.search);
+        const preview = params.get("rig") === "1" ||
+                        params.get("motions") === "1" ||
+                        Boolean(params.get("motion"));
+        if (rig && preview) {
           window.DressLabRigDebug?.mount(rig, motion);
+          const chosenMotion = params.get("motion");
+          if (motion && chosenMotion && window.DressLabMotionActions?.includes(chosenMotion)) {
+            motion.play(chosenMotion);
+          }
         }
       } catch (error) {
         console.error(error);
