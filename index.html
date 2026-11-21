@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#ffffff">
   <meta name="description" content="Dress Lab V2 - 분리된 신체 파츠를 원본 좌표 그대로 결합한 미리보기">
   <title>Dress Lab V2</title>
+  <link rel="stylesheet" href="./ui/layout.css">
+  <script src="./ui/layout.js" defer></script>
   <style>
     * { box-sizing: border-box; }
     html, body {
@@ -84,7 +86,7 @@
   <main class="stage" id="stage" aria-label="기본 캐릭터 이미지" aria-busy="true">
     <div class="artboard" id="artboard">
       <canvas id="character" role="img" aria-label="분리된 신체 파츠를 합친 기본 캐릭터">Canvas를 지원하지 않는 브라우저야.</canvas>
-      <div class="ui-overlay" id="ui-overlay" aria-hidden="true"></div>
+      <div class="ui-overlay" id="ui-overlay"></div>
     </div>
     <div class="loading" id="loading">파츠 이미지를 불러오는 중...</div>
     <p class="sr-only" id="status" role="status" aria-live="polite"></p>
