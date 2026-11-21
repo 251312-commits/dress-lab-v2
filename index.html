@@ -92,6 +92,8 @@
     <p class="sr-only" id="status" role="status" aria-live="polite"></p>
   </main>
 
+  <script src="./rig/rig.js"></script>
+  <script src="./rig/debug.js"></script>
   <script>
     "use strict";
 
@@ -209,14 +211,35 @@
         canvas.height = height;
         context.clearRect(0, 0, width, height);
 
-        let drawn = 0;
+        // Only use source-dimension-matching images. Keep the original numeric
+        // layer order, so an all-zero joint pose is pixel-identical to V2.
+        const usableLayers = [];
         for (const item of loaded.sort((a, b) => backToFront(a.filename, b.filename))) {
           if (item.image.naturalWidth !== width || item.image.naturalHeight !== height) {
             failures.push(item.filename + ": 이미지 크기 불일치");
             continue;
           }
-          context.drawImage(item.image, 0, 0);
-          drawn += 1;
+          usableLayers.push(item);
+        }
+        const drawn = usableLayers.length;
+        let rig = null;
+        try {
+          const response = await fetch("./rig/rig.json", { cache: "no-cache" });
+          if (!response.ok) throw new Error("rig.json HTTP " + response.status);
+          const definition = await response.json();
+          if (!window.DressLabRig) throw new Error("rig.js를 불러올 수 없어");
+          rig = new window.DressLabRig({
+            canvas,
+            layers: usableLayers,
+            config: definition
+          });
+          window.dressLabRig = rig;
+        } catch (rigError) {
+          // Keep the original static doll functional if rig data is unavailable.
+          console.warn("관절 리그 불러오기 실패 · 기존 합성 방식으로 표시:", rigError);
+          context.setTransform(1, 0, 0, 1, 0, 0);
+          context.clearRect(0, 0, width, height);
+          for (const item of usableLayers) context.drawImage(item.image, 0, 0);
         }
 
         status.textContent = drawn + "개 파츠 결합 · 원본 " + width + " × " + height + "px" +
@@ -224,6 +247,10 @@
         if (failures.length) console.warn("파츠 확인 필요:", failures);
         canvas.dataset.ready = "true";
         fitArtboard();
+        // Never show editing controls in the normal game view.
+        if (rig && new URLSearchParams(window.location.search).get("rig") === "1") {
+          window.DressLabRigDebug?.mount(rig);
+        }
       } catch (error) {
         console.error(error);
         stage.classList.add("error");
