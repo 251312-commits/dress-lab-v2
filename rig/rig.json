@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 1206,
+    "height": 2622
+  },
+  "reference": "base/Full.PNG",
+  "coordinateSystem": "Original PNG coordinates, origin at top-left, x right, y down.",
+  "extraction": "Blue circle centers in Full.PNG; least-squares circle fitting of blue outline pixels (rounded to 0.1 px).",
+  "note": "No independent head or neck joint. Head and neck can follow torso movement, but have no local rotation control. Full.PNG is reference-only and not rendered as a character part.",
+  "pivots": {
+    "torso": {
+      "label": "몸통",
+      "x": 328.6,
+      "y": 1166.5,
+      "parent": null,
+      "min": -12,
+      "max": 12
+    },
+    "shoulderL": {
+      "label": "왼쪽 어깨",
+      "x": 244.3,
+      "y": 1013.2,
+      "parent": "torso",
+      "min": -80,
+      "max": 80
+    },
+    "elbowL": {
+      "label": "왼쪽 팔꿈치",
+      "x": 188.8,
+      "y": 1175.2,
+      "parent": "shoulderL",
+      "min": -100,
+      "max": 100
+    },
+    "wristL": {
+      "label": "왼쪽 손목",
+      "x": 141.1,
+      "y": 1319.3,
+      "parent": "elbowL",
+      "min": -65,
+      "max": 65
+    },
+    "shoulderR": {
+      "label": "오른쪽 어깨",
+      "x": 412.8,
+      "y": 1013.3,
+      "parent": "torso",
+      "min": -80,
+      "max": 80
+    },
+    "elbowR": {
+      "label": "오른쪽 팔꿈치",
+      "x": 468.6,
+      "y": 1175.2,
+      "parent": "shoulderR",
+      "min": -100,
+      "max": 100
+    },
+    "wristR": {
+      "label": "오른쪽 손목",
+      "x": 516.4,
+      "y": 1319.2,
+      "parent": "elbowR",
+      "min": -65,
+      "max": 65
+    },
+    "hipL": {
+      "label": "왼쪽 고관절",
+      "x": 257.2,
+      "y": 1367.8,
+      "parent": null,
+      "min": -48,
+      "max": 48
+    },
+    "kneeL": {
+      "label": "왼쪽 무릎",
+      "x": 246.3,
+      "y": 1623.2,
+      "parent": "hipL",
+      "min": -100,
+      "max": 100
+    },
+    "hipR": {
+      "label": "오른쪽 고관절",
+      "x": 399.4,
+      "y": 1367.7,
+      "parent": null,
+      "min": -48,
+      "max": 48
+    },
+    "kneeR": {
+      "label": "오른쪽 무릎",
+      "x": 411,
+      "y": 1623.2,
+      "parent": "hipR",
+      "min": -100,
+      "max": 100
+    }
+  },
+  "parts": {
+    "01-Head.PNG": "torso",
+    "02-Neck.PNG": "torso",
+    "03-Bust.PNG": "torso",
+    "04-UpperTorso.PNG": "torso",
+    "05-LowerTorso.PNG": null,
+    "06-TorsoJoint.PNG": "torso",
+    "07-Hips.PNG": null,
+    "08-UpperLeg(L).PNG": "hipL",
+    "09-UpperLeg(R).PNG": "hipR",
+    "10-LowerLeg(L).PNG": "kneeL",
+    "11-LowerLeg(R).PNG": "kneeR",
+    "12-UpperArm(L).PNG": "shoulderL",
+    "13-UpperArm(R).PNG": "shoulderR",
+    "14-LowerArm(L).PNG": "elbowL",
+    "15-LowerArm(R).PNG": "elbowR",
+    "16-hand(L).PNG": "wristL",
+    "17-Hand(R).PNG": "wristR"
+  }
+}
