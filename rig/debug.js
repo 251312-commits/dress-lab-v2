@@ -57,6 +57,7 @@
         '<p class="rig-subtitle">기본 포즈</p>',
         '<div class="rig-controls">',
           '<button type="button" id="rig-neutral">기본 자세</button>',
+          '<button type="button" data-rig-pose="reference">첨부 포즈</button>',
           '<button type="button" data-rig-pose="relaxed">편안하게</button>',
           '<button type="button" data-rig-pose="shy">수줍게</button>',
           '<button type="button" data-rig-pose="greeting">팔 들기</button>',
@@ -64,7 +65,16 @@
           '<button type="button" data-rig-pose="sway">기울기</button>',
           '<button type="button" id="rig-export">포즈 저장</button>',
         '</div>',
-        '<label class="rig-strength">보잉 강도 <input id="rig-strength" type="range" min="0.35" max="1.6" step="0.05" value="1"><output id="rig-strength-value">1.00×</output></label>',
+        '<p class="rig-subtitle">큰 동작 · 첨부한 포즈 기반</p>',
+        '<div class="rig-controls">',
+          '<button type="button" data-rig-action="showPose">첨부 포즈 연기</button>',
+          '<button type="button" data-rig-action="bigWave">큰 손짓</button>',
+          '<button type="button" data-rig-action="hop">한발 콩콩</button>',
+          '<button type="button" data-rig-action="dance">좌우 율동</button>',
+          '<button type="button" data-rig-action="stretch">기지개</button>',
+        '</div>',
+        '<p class="rig-note" id="rig-motion-hint" role="status">큰 동작은 버튼을 누를 때만 재생돼. 평소에는 숨쉬기 idle이 유지돼.</p>',
+        '<label class="rig-strength">애니메이션 강도 <input id="rig-strength" type="range" min="0.35" max="1.6" step="0.05" value="1"><output id="rig-strength-value">1.00×</output></label>',
         '<div class="rig-flags">',
           '<label><input type="checkbox" id="rig-show-dots" checked> 축 표시</label>',
           '<label><input type="checkbox" id="rig-show-full"> 원본 참고그림</label>',
@@ -130,7 +140,12 @@
     }
     for (const button of section.querySelectorAll("[data-rig-action]")) {
       button.addEventListener("click", () => {
-        motionController?.play(button.dataset.rigAction);
+        const played = motionController?.play(button.dataset.rigAction) || false;
+        const hint = section.querySelector("#rig-motion-hint");
+        if (!hint) return;
+        hint.textContent = played
+          ? button.textContent + " 재생 중 · 끝나면 숨쉬기 idle로 돌아가."
+          : "재생할 수 없어. 기기의 '움직임 줄이기' 설정 또는 리그 상태를 확인해 줘.";
       });
     }
     const power = section.querySelector("#rig-strength");
