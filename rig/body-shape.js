@@ -1,9 +1,10 @@
 /* Dress Lab V2 — independent leg-silhouette deformation.
  *
  * This is deliberately NOT the v1 whole-image warp. Only four leg PNG layers
- * are resampled, one horizontal image row at a time. Hip/ankle boundaries
- * return to their original widths, while both sides of the knee share 10% of
- * the combined thigh/calf thickness change.
+ * are resampled, one horizontal image row at a time. The hip boundary
+ * follows 30% of thigh change; the top and bottom knee pieces both receive
+ * exactly 30% of EACH thigh and calf change, so the seam uses one shared
+ * scale. The foot returns to its original width.
  *
  * Source PNGs and joint coordinates remain untouched. The output sprites
  * retain their source-pixel coordinates and work with the existing rig,
@@ -33,7 +34,8 @@
       this.rig = rig;
       this.thighs = 100;
       this.calves = 100;
-      this.kneeInfluence = 0.10;
+      this.hipInfluence = 0.30;
+      this.kneeInfluence = 0.30;
       this.sources = new Map();
       this.canvasesBuilt = 0;
 
@@ -90,15 +92,22 @@
       return {
         thighs: this.thighs,
         calves: this.calves,
+        hipInfluence: this.hipInfluence,
+        hipScale: Number(this.hipScale().toFixed(4)),
         kneeInfluence: this.kneeInfluence,
         kneeScale: Number(this.kneeScale().toFixed(4))
       };
     }
 
+    hipScale() {
+      return 1 + this.hipInfluence * (this.thighs / 100 - 1);
+    }
+
     kneeScale() {
       const dThigh = this.thighs / 100 - 1;
       const dCalf = this.calves / 100 - 1;
-      return 1 + this.kneeInfluence * (dThigh + dCalf);
+      // One shared value for BOTH upper-leg and lower-leg knee boundaries.
+      return 1 + this.kneeInfluence * dThigh + this.kneeInfluence * dCalf;
     }
 
     // All widths are relative to the ORIGINAL local outline, never to a
@@ -109,14 +118,18 @@
       const knee = this.rig.config.pivots["knee" + side].y;
       const dThigh = this.thighs / 100 - 1;
       const dCalf = this.calves / 100 - 1;
-      const kneeDelta = this.kneeInfluence * (dThigh + dCalf);
+      const hipDelta = this.hipInfluence * dThigh;
+      const kneeDelta = this.kneeScale() - 1;
 
       if (upper) {
         const t = clamp((y - hip) / Math.max(1, knee - hip), 0, 1);
-        const thighRise = smoothstep(0.02, 0.34, t);
-        const kneeBlend = smoothstep(0.56, 1, t);
-        return 1 + (dThigh * thighRise) * (1 - kneeBlend) +
-          kneeDelta * kneeBlend;
+        // Keep a small stable zone around the upper hip attachment.
+        // Move smoothly from its 30% influence to the full thigh width.
+        const thighRise = smoothstep(0.06, 0.36, t);
+        // Reach the SAME knee scale as the lower-leg piece before the seam.
+        const kneeBlend = smoothstep(0.70, 0.90, t);
+        return 1 + (hipDelta * (1 - thighRise) + dThigh * thighRise) *
+          (1 - kneeBlend) + kneeDelta * kneeBlend;
       }
 
       // The lower-leg PNG includes the foot. Its bottom ~16% must remain
@@ -124,8 +137,10 @@
       const footBottom = source.y + source.h - 1;
       const ankle = knee + (footBottom - knee) * 0.84;
       const t = clamp((y - knee) / Math.max(1, ankle - knee), 0, 1);
-      const kneeWeight = 1 - smoothstep(0.02, 0.34, t);
-      const calfBulge = smoothstep(0.12, 0.39, t) *
+      // Knee-side rows start at exactly the upper-leg knee scale; the
+      // shared width holds briefly before fading into the calf contour.
+      const kneeWeight = 1 - smoothstep(0.10, 0.36, t);
+      const calfBulge = smoothstep(0.18, 0.43, t) *
         (1 - smoothstep(0.52, 0.95, t));
       return 1 + kneeDelta * kneeWeight + dCalf * calfBulge;
     }
