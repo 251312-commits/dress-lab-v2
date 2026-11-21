@@ -41,7 +41,7 @@
     panel.setAttribute("aria-label", "허벅지와 종아리 체형 조절");
     panel.innerHTML = [
       '<header><strong>다리 체형 조절 · 실험</strong><button type="button" id="shape-reset">초기화</button></header>',
-      '<p>허벅지와 종아리의 가운데를 변형하고, 무릎 연결부는 변화량의 10%만 따라가게 했어.</p>',
+      '<p>골반 연결부는 허벅지 변화량의 30%, 무릎 위·아래는 허벅지와 종아리 변화량을 각각 30%씩 공유해.</p>',
       '<div class="shape-row">',
         '<label for="shape-thighs">허벅지</label>',
         '<input id="shape-thighs" type="range" min="85" max="135" step="1" value="100">',
@@ -52,7 +52,8 @@
         '<input id="shape-calves" type="range" min="85" max="135" step="1" value="100">',
         '<output id="shape-calves-value" for="shape-calves">100%</output>',
       '</div>',
-      '<p class="shape-note" id="shape-knee" role="status">무릎 연결부: 100.0%</p>',
+      '<p class="shape-note" id="shape-hip" role="status">골반 연결부: 100.0%</p>',
+      '<p class="shape-note" id="shape-knee" role="status">무릎 위·아래 연결부: 100.0%</p>',
       '<div class="shape-tools">',
         '<button type="button" id="shape-toggle-idle">움직임 정지</button>',
         '<small>양쪽 다리 동시 조절</small>',
@@ -64,6 +65,7 @@
     const calf = panel.querySelector("#shape-calves");
     const outThigh = panel.querySelector("#shape-thighs-value");
     const outCalf = panel.querySelector("#shape-calves-value");
+    const hip = panel.querySelector("#shape-hip");
     const knee = panel.querySelector("#shape-knee");
     const motionButton = panel.querySelector("#shape-toggle-idle");
 
@@ -71,8 +73,11 @@
     function updateOutputs() {
       outThigh.textContent = thigh.value + "%";
       outCalf.textContent = calf.value + "%";
-      const delta = 0.1 * ((Number(thigh.value) - 100) + (Number(calf.value) - 100));
-      knee.textContent = "무릎 연결부: " + (100 + delta).toFixed(1) + "%";
+      const hipPercent = 100 + shape.hipInfluence * (Number(thigh.value) - 100);
+      const kneePercent = 100 + shape.kneeInfluence *
+        ((Number(thigh.value) - 100) + (Number(calf.value) - 100));
+      hip.textContent = "골반 연결부: " + hipPercent.toFixed(1) + "%";
+      knee.textContent = "무릎 위·아래 연결부: " + kneePercent.toFixed(1) + "%";
     }
     function applyNow() {
       scheduled = false;
