@@ -445,13 +445,16 @@
 .ui-scene[data-room="care"] .ui-tabs {
   display: none;
 }
-/* Preserve the three outlined tab placeholders in the reference sketch, but
- * do not expose wardrobe/color actions while in the magic room. */
+/* Magic Room category tabs are visible and clickable in this exact
+ * top-to-bottom order: 체형 → 피부톤 → 얼굴. */
 .ui-scene[data-room="magic"] .ui-tabs__button {
-  font-size: 0 !important;
-  color: transparent !important;
+  font-size: 29px !important;
+  color: #22201f !important;
   background: #fff !important;
-  pointer-events: none;
+  pointer-events: auto;
+}
+.ui-scene[data-room="magic"] .ui-tabs__button[aria-pressed="true"] {
+  background: #eeeae5 !important;
 }
 
 .ui-magic-panel {
@@ -469,7 +472,26 @@
   scrollbar-width: thin;
   pointer-events: auto;
 }
-.ui-scene[data-room="magic"] .ui-magic-panel { display: block; }
+.ui-scene[data-room="magic"][data-magic-tab="body"] .ui-magic-panel { display: block; }
+.ui-magic-placeholder {
+  position: absolute;
+  inset: 86px 4px 0 0;
+  display: none;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 66px 36px;
+  background: white;
+  font-size: 31px;
+  line-height: 1.45;
+  color: #2b2523;
+}
+.ui-magic-placeholder strong { font-size: 48px; margin-bottom: 30px; }
+.ui-magic-placeholder p { margin: 0; color: #746961; }
+.ui-scene[data-room="magic"][data-magic-tab="skin"] .ui-magic-placeholder--skin,
+.ui-scene[data-room="magic"][data-magic-tab="face"] .ui-magic-placeholder--face {
+  display: flex;
+}
 .ui-magic-row {
   display: flex;
   flex-direction: column;
