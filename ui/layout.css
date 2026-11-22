@@ -425,3 +425,160 @@
 @media (prefers-reduced-motion: no-preference) {
   .ui-scene button { transition: background-color .13s ease; }
 }
+
+/* --------------------------------------------------------------------------
+ * MAGIC ROOM: sketch-based body slider layout (V5)
+ *
+ * The 1206×2622 design artboard is shared with the doll. The existing right
+ * editor frame and bottom four-room dock stay in their original positions.
+ * Only its contents change when the "마법룸" room is selected.
+ * -------------------------------------------------------------------------- */
+.ui-scene[data-room="magic"] .ui-colors,
+.ui-scene[data-room="magic"] .ui-preview,
+.ui-scene[data-room="magic"] .ui-outfit-heading,
+.ui-scene[data-room="magic"] .ui-outfit-grid {
+  display: none;
+}
+.ui-scene[data-room="reception"] .ui-editor,
+.ui-scene[data-room="reception"] .ui-tabs,
+.ui-scene[data-room="care"] .ui-editor,
+.ui-scene[data-room="care"] .ui-tabs {
+  display: none;
+}
+/* Preserve the three outlined tab placeholders in the reference sketch, but
+ * do not expose wardrobe/color actions while in the magic room. */
+.ui-scene[data-room="magic"] .ui-tabs__button {
+  font-size: 0 !important;
+  color: transparent !important;
+  background: #fff !important;
+  pointer-events: none;
+}
+
+.ui-magic-panel {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 4px;
+  top: 86px;
+  bottom: 0;
+  padding: 20px 24px 38px 27px;
+  background: #fff;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  pointer-events: auto;
+}
+.ui-scene[data-room="magic"] .ui-magic-panel { display: block; }
+.ui-magic-row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 194px;
+  padding-top: 9px;
+  padding-bottom: 18px;
+  gap: 20px;
+}
+.ui-magic-title {
+  display: block;
+  font-size: 49px;
+  font-weight: 800;
+  line-height: 1.14;
+  color: #171717;
+  letter-spacing: -.06em;
+}
+.ui-magic-input-line {
+  display: grid;
+  grid-template-columns: 65px 47px minmax(0, 1fr) 47px;
+  column-gap: 8px;
+  align-items: center;
+  min-height: 52px;
+}
+.ui-magic-output {
+  font-size: 29px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  letter-spacing: -.04em;
+}
+.ui-magic-step {
+  width: 43px;
+  height: 43px;
+  border: 4px solid #1d1d1d !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  padding: 0;
+  font-size: 37px !important;
+  font-weight: 450 !important;
+  line-height: 1 !important;
+  display: grid;
+  place-items: center;
+}
+.ui-magic-slider {
+  min-width: 0;
+  width: 100%;
+  height: 52px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  touch-action: pan-x;
+  cursor: pointer;
+}
+.ui-magic-slider::-webkit-slider-runnable-track {
+  height: 16px;
+  border: 3px solid #1d1d1d;
+  border-radius: 14px;
+  background: #fff;
+}
+.ui-magic-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 32px;
+  width: 32px;
+  margin-top: -11px;
+  border: 3px solid #1d1d1d;
+  border-radius: 50%;
+  background: #fff;
+}
+.ui-magic-slider::-moz-range-track {
+  height: 16px;
+  border: 3px solid #1d1d1d;
+  border-radius: 14px;
+  background: #fff;
+}
+.ui-magic-slider::-moz-range-thumb {
+  height: 28px;
+  width: 28px;
+  border: 3px solid #1d1d1d;
+  border-radius: 50%;
+  background: #fff;
+}
+.ui-magic-row:last-of-type { margin-bottom: 12px; }
+.ui-magic-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0 8px;
+}
+.ui-magic-reset {
+  width: 156px;
+  height: 58px;
+  font-size: 29px !important;
+  font-weight: 700 !important;
+}
+.ui-magic-status {
+  min-height: 30px;
+  font-size: 23px;
+  line-height: 1.3;
+  color: #61534d;
+}
+.ui-magic-step:disabled,
+.ui-magic-slider:disabled,
+.ui-magic-reset:disabled {
+  opacity: .45;
+  cursor: default;
+}
+.ui-magic-panel button:focus-visible,
+.ui-magic-panel input:focus-visible {
+  outline: 4px solid #7d5e87;
+  outline-offset: 5px;
+}
