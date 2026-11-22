@@ -683,8 +683,13 @@
           width = source.w * factor;
         }
         geometries[y] = { left, width };
-        minX = Math.min(minX, left);
-        maxX = Math.max(maxX, left + width);
+        // Size the new canvas around the ACTUAL painted silhouette, not the
+        // transparent padding in the full source PNG. Essential if fast
+        // sprite cropping was unavailable on a mobile browser.
+        const leftEdge = left + (row.left - source.x) * width / source.w;
+        const rightEdge = left + (row.right - source.x) * width / source.w;
+        minX = Math.min(minX, leftEdge);
+        maxX = Math.max(maxX, rightEdge);
       }
       if (!changed) {
         return { filename: source.filename,
