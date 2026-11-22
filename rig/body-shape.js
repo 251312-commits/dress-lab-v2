@@ -38,6 +38,8 @@
     neck: Object.freeze([78, 127]),
     neckWidth: Object.freeze([80, 120]),
     upperTorso: Object.freeze([90, 118]),
+    bust: Object.freeze([89, 119]),
+    ratio: Object.freeze([82, 118]),
     armWidth: Object.freeze([80, 125]),
     armLength: Object.freeze([85, 120]),
     handSize: Object.freeze([80, 125]),
@@ -57,6 +59,8 @@
       this.neck = 100;
       this.neckWidth = 100;
       this.upperTorso = 100;
+      this.bust = 100;
+      this.ratio = 100;
       this.armWidth = 100;
       this.armLength = 100;
       this.handSize = 100;
@@ -147,6 +151,30 @@
         span,
         jawY: neckTopY + Math.min(31, span * 0.45)
       });
+
+      // Preserve the shoulder position and the bottom of the feet. The hip
+      // seam is allowed to move up/down, trading torso length against leg
+      // length without changing the artboard or creating a gap between parts.
+      const lowerLegFiles = ["10-LowerLeg(L).PNG", "11-LowerLeg(R).PNG"];
+      const footBottomY = Math.max(...lowerLegFiles.map(filename => {
+        const part = this.sources.get(filename);
+        const last = [...part.rows].reverse().find(Boolean);
+        return last.y;
+      }));
+      const shoulderLineY =
+        (this.basePivots.shoulderL.y + this.basePivots.shoulderR.y) / 2;
+      const hipLineY =
+        (this.basePivots.hipL.y + this.basePivots.hipR.y) / 2;
+      if (!(shoulderLineY < hipLineY && hipLineY < footBottomY)) {
+        throw new Error("Body-ratio reference anchors are out of order");
+      }
+      this.ratioAnchors = Object.freeze({
+        top: shoulderLineY,
+        hip: hipLineY,
+        bottom: footBottomY
+      });
+      const bustPart = this.sources.get("03-Bust.PNG");
+      this.bustTopY = bustPart.rows.find(Boolean).y;
     }
 
     getState() {
@@ -155,6 +183,8 @@
         neck: this.neck,
         neckWidth: this.neckWidth,
         upperTorso: this.upperTorso,
+        bust: this.bust,
+        ratio: this.ratio,
         armWidth: this.armWidth,
         armLength: this.armLength,
         handSize: this.handSize,
@@ -216,8 +246,10 @@
           smoothstep(1280, 1330, y);
       }
 
-      const hip = this.rig.config.pivots["hip" + side].y;
-      const knee = this.rig.config.pivots["knee" + side].y;
+      // Shape factors are always computed from immutable source anchors.
+      // Previously shaped pivots may already have a ratio-adjusted Y.
+      const hip = this.basePivots["hip" + side].y;
+      const knee = this.basePivots["knee" + side].y;
       if (kind === "upper") {
         const t = clamp((y - hip) / Math.max(1, knee - hip), 0, 1);
         const toThigh = smoothstep(0.04, 0.32, t);
@@ -446,6 +478,80 @@
       return { filename, image: canvas, x: left, y: top };
     }
 
+    // Bust is an independent overlay above UpperTorso. Resizing at this
+    // stage keeps its top contour fixed and grows the lower volume, while
+    // preserving the current upper-torso width adjustment.
+    resizeBust(layer) {
+      if (this.bust === 100) return layer;
+      const vertical = this.bust / 100;
+      const horizontal = 1 + 0.65 * (vertical - 1);
+      const { image } = layer;
+      const width = image.width || image.naturalWidth;
+      const height = image.height || image.naturalHeight;
+      const centerX = this.basePivots.torso.x;
+      const newLeft = centerX + (layer.x - centerX) * horizontal;
+      const newTop = this.bustTopY + (layer.y - this.bustTopY) * vertical;
+      const minX = Math.floor(newLeft) - 2, minY = Math.floor(newTop) - 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.ceil(newLeft + width * horizontal - minX) + 2);
+      canvas.height = Math.max(1, Math.ceil(newTop + height * vertical - minY) + 2);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Cannot resize the bust PNG");
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(image, newLeft - minX, newTop - minY,
+        width * horizontal, height * vertical);
+      this.canvasesBuilt++;
+      return { filename: layer.filename, image: canvas, x: minX, y: minY };
+    }
+
+    // Source-coordinate mapping for the torso-to-leg ratio:
+    // - head/neck/shoulders stay fixed;
+    // - upper body elongates while the lower body shortens, or vice versa;
+    // - feet remain at their original Y;
+    // - the same mapping is used for every part AND every joint pivot.
+    mapRatioY(y) {
+      if (this.ratio === 100) return y;
+      const { top, hip, bottom } = this.ratioAnchors;
+      const shift = (this.ratio / 100 - 1) * (hip - top);
+      if (y <= top || y >= bottom) return y;
+      if (y <= hip) return y + shift * (y - top) / (hip - top);
+      return y + shift * (bottom - y) / (bottom - hip);
+    }
+
+    // Four or fewer vertical blits per sprite rather than hundreds of strips.
+    // Both sides of the hip junction are mapped by the same continuous
+    // function, and no distortion accumulates when the slider is moved.
+    warpRatioLayer(layer) {
+      if (this.ratio === 100) return layer;
+      const image = layer.image;
+      const width = image.width || image.naturalWidth;
+      const height = image.height || image.naturalHeight;
+      const start = layer.y || 0, end = start + height;
+      const { top, hip, bottom } = this.ratioAnchors;
+      if (end <= top || start >= bottom) return layer;
+      const destTop = this.mapRatioY(start);
+      const destBottom = this.mapRatioY(end);
+      const originY = Math.floor(Math.min(destTop, destBottom)) - 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = Math.ceil(Math.max(destTop, destBottom) - originY) + 2;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Cannot resize the torso/leg ratio");
+      ctx.imageSmoothingEnabled = true;
+      const cuts = [start, top, hip, bottom, end]
+        .filter(y => y >= start && y <= end)
+        .sort((a, b) => a - b);
+      for (let i = 1; i < cuts.length; i++) {
+        const a = cuts[i - 1], b = cuts[i];
+        if (b - a <= 1e-8) continue;
+        ctx.drawImage(image, 0, a - start, width, b - a,
+          0, this.mapRatioY(a) - originY, width,
+          this.mapRatioY(b) - this.mapRatioY(a));
+      }
+      this.canvasesBuilt++;
+      return { ...layer, image: canvas, y: originY };
+    }
+
     // A row-based, smoothly interpolated horizontal mesh: one source image
     // row maps to a stretched/shrunk output row. Vertical coordinates do not
     // change, so hip/knee pivots and animations stay in the same coordinate
@@ -530,8 +636,9 @@
         } else if (kind === "neck") {
           output.set(filename, this.deformNeck(source));
         } else {
-          output.set(filename, this.deform(source, kind, side,
-            kind === "upper" || kind === "lower" ? hipOffsets[side] : 0));
+          const local = this.deform(source, kind, side,
+            kind === "upper" || kind === "lower" ? hipOffsets[side] : 0);
+          output.set(filename, kind === "bust" ? this.resizeBust(local) : local);
         }
       }
 
@@ -590,12 +697,26 @@
         for (const id of ["hip", "knee"]) {
           this.rig.config.pivots[id + side].x =
             this.basePivots[id + side].x + hipOffsets[side];
+          this.rig.config.pivots[id + side].y = this.basePivots[id + side].y;
         }
       }
 
-      this.rig.layers = this.rig.layers.map(layer =>
+      // Convert all the pre-ratio sprites and joint pivots through the SAME
+      // vertical mapping. Shoulder and feet are anchored; the hip junction
+      // remains seamless as its height changes.
+      this.rig.config.pivots.torso.y =
+        this.mapRatioY(this.basePivots.torso.y);
+      for (const side of ["L", "R"]) {
+        for (const id of ["shoulder", "elbow", "wrist", "hip", "knee"]) {
+          const key = id + side;
+          this.rig.config.pivots[key].y =
+            this.mapRatioY(this.rig.config.pivots[key].y);
+        }
+      }
+
+      this.rig.layers = this.rig.layers.map(layer => this.warpRatioLayer(
         output.get(layer.filename) || this.baseLayers.get(layer.filename) || layer
-      );
+      ));
       this.rig.render();
       return true;
     }
@@ -603,7 +724,8 @@
     reset() {
       return this.setShape({
         head: 100, neck: 100, neckWidth: 100,
-        upperTorso: 100, armWidth: 100, armLength: 100,
+        upperTorso: 100, bust: 100, ratio: 100,
+        armWidth: 100, armLength: 100,
         handSize: 100, waist: 100, hips: 100,
         thighs: 100, calves: 100
       });
