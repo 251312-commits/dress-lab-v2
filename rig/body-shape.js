@@ -23,15 +23,15 @@
   const PARTS = Object.freeze({
     "01-Head.PNG": ["head", null],
     "02-Neck.PNG": ["neck", null],
-    "03-Bust.PNG": ["bust", null],
-    "04-UpperTorso.PNG": ["upperTorso", null],
-    "05-LowerTorso.PNG": ["lowerTorso", null],
-    "06-TorsoJoint.PNG": ["waistJoint", null],
-    "07-Hips.PNG": ["pelvis", null],
-    "08-UpperLeg(L).PNG": ["upper", "L"],
-    "09-UpperLeg(R).PNG": ["upper", "R"],
-    "10-LowerLeg(L).PNG": ["lower", "L"],
-    "11-LowerLeg(R).PNG": ["lower", "R"]
+    "05-Bust.PNG": ["bust", null],
+    "06-UpperTorso.PNG": ["upperTorso", null],
+    "07-LowerTorso.PNG": ["lowerTorso", null],
+    "08-TorsoJoint.PNG": ["waistJoint", null],
+    "09-Hips.PNG": ["pelvis", null],
+    "10-UpperLeg(L).PNG": ["upper", "L"],
+    "11-UpperLeg(R).PNG": ["upper", "R"],
+    "12-LowerLeg(L).PNG": ["lower", "L"],
+    "13-LowerLeg(R).PNG": ["lower", "R"]
   });
   const LIMITS = Object.freeze({
     head: Object.freeze([70, 113]),
@@ -132,7 +132,7 @@
       // shoulder-pivot stretch moved even the neck's lower edge, opening a gap.
       // Use the actual PNG overlap to keep the lower attachment stationary.
       const neckSource = this.sources.get("02-Neck.PNG");
-      const torsoSource = this.sources.get("04-UpperTorso.PNG");
+      const torsoSource = this.sources.get("06-UpperTorso.PNG");
       const firstNeckRow = neckSource.rows.find(row => row);
       const lastNeckRow = [...neckSource.rows].reverse().find(row => row);
       const firstTorsoRow = torsoSource.rows.find(row => row);
@@ -155,7 +155,7 @@
       // Preserve the shoulder position and the bottom of the feet. The hip
       // seam is allowed to move up/down, trading torso length against leg
       // length without changing the artboard or creating a gap between parts.
-      const lowerLegFiles = ["10-LowerLeg(L).PNG", "11-LowerLeg(R).PNG"];
+      const lowerLegFiles = ["12-LowerLeg(L).PNG", "13-LowerLeg(R).PNG"];
       const footBottomY = Math.max(...lowerLegFiles.map(filename => {
         const part = this.sources.get(filename);
         const last = [...part.rows].reverse().find(Boolean);
@@ -173,7 +173,7 @@
         hip: hipLineY,
         bottom: footBottomY
       });
-      const bustPart = this.sources.get("03-Bust.PNG");
+      const bustPart = this.sources.get("05-Bust.PNG");
       this.bustTopY = bustPart.rows.find(Boolean).y;
     }
 
@@ -670,8 +670,8 @@
         };
 
         const filenames = [
-          "12-UpperArm(" + side + ").PNG",
-          "13-UpperArm(" + side + ").PNG",
+          "03-UpperArm(" + side + ").PNG",
+          "04-UpperArm(" + side + ").PNG",
           "14-LowerArm(" + side + ").PNG",
           "15-LowerArm(" + side + ").PNG"
         ];
@@ -723,6 +723,11 @@
       this.rig.layers = this.rig.layers.map(layer => this.warpRatioLayer(
         output.get(layer.filename) || this.baseLayers.get(layer.filename) || layer
       ));
+      // Cover radii share the same deformation parameters as the limb ends.
+      this.rig.jointCapScale = {
+        elbow: this.armWidth / 100,
+        knee: this.kneeScale()
+      };
       this.rig.render();
       return true;
     }

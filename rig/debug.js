@@ -86,6 +86,7 @@
         '<label class="rig-strength">애니메이션 강도 <input id="rig-strength" type="range" min="0.35" max="1.6" step="0.05" value="1"><output id="rig-strength-value">1.00×</output></label>',
         '<div class="rig-flags">',
           '<label><input type="checkbox" id="rig-show-dots" checked> 축 표시</label>',
+          '<label><input type="checkbox" id="rig-show-caps" checked> 연결 원</label>',
           '<label><input type="checkbox" id="rig-show-full"> 원본 참고그림</label>',
         '</div>',
         ids.map(id => {
@@ -190,6 +191,11 @@
 
     section.querySelector("#rig-show-dots").addEventListener("change", event => {
       rig.showMarkers(event.target.checked);
+    });
+    const capCheckbox = section.querySelector("#rig-show-caps");
+    capCheckbox.checked = rig.jointCapsVisible !== false;
+    capCheckbox.addEventListener("change", event => {
+      rig.showJointCaps(event.target.checked);
     });
     const referenceControl = section.querySelector("#rig-show-full");
     let guide = null;

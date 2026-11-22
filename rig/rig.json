@@ -101,20 +101,38 @@
   "parts": {
     "01-Head.PNG": "torso",
     "02-Neck.PNG": "torso",
-    "03-Bust.PNG": "torso",
-    "04-UpperTorso.PNG": "torso",
-    "05-LowerTorso.PNG": null,
-    "06-TorsoJoint.PNG": "torso",
-    "07-Hips.PNG": null,
-    "08-UpperLeg(L).PNG": "hipL",
-    "09-UpperLeg(R).PNG": "hipR",
-    "10-LowerLeg(L).PNG": "kneeL",
-    "11-LowerLeg(R).PNG": "kneeR",
-    "12-UpperArm(L).PNG": "shoulderL",
-    "13-UpperArm(R).PNG": "shoulderR",
+    "03-UpperArm(L).PNG": "shoulderL",
+    "04-UpperArm(R).PNG": "shoulderR",
+    "05-Bust.PNG": "torso",
+    "06-UpperTorso.PNG": "torso",
+    "07-LowerTorso.PNG": null,
+    "08-TorsoJoint.PNG": "torso",
+    "09-Hips.PNG": null,
+    "10-UpperLeg(L).PNG": "hipL",
+    "11-UpperLeg(R).PNG": "hipR",
+    "12-LowerLeg(L).PNG": "kneeL",
+    "13-LowerLeg(R).PNG": "kneeR",
     "14-LowerArm(L).PNG": "elbowL",
     "15-LowerArm(R).PNG": "elbowR",
     "16-hand(L).PNG": "wristL",
     "17-Hand(R).PNG": "wristR"
+  },
+  "jointCaps": {
+    "elbowL": {
+      "group": "elbow",
+      "radius": 17
+    },
+    "elbowR": {
+      "group": "elbow",
+      "radius": 17
+    },
+    "kneeL": {
+      "group": "knee",
+      "radius": 34
+    },
+    "kneeR": {
+      "group": "knee",
+      "radius": 34
+    }
   }
 }

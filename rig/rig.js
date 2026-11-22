@@ -30,6 +30,8 @@
       this.root = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
       this.rootAnchor = { x: 328.6, y: 2050 };
       this.markersVisible = false;
+      this.jointCapsVisible = true;
+      this.jointCapScale = { elbow: 1, knee: 1 };
       this.referenceImage = null;
       this.referenceVisible = false;
 
@@ -146,8 +148,20 @@
 
       ctx.save();
       this.applyRootTransform(ctx);
+      let elbowCapsDrawn = false;
+      let kneeCapsDrawn = false;
       for (const { filename, image, x = 0, y = 0 } of this.layers) {
         if (!image) continue;
+        // These circles are drawn immediately before the FIRST foreground
+        // forearm/shin so BOTH joint-connected segments cover them.
+        if (this.jointCapsVisible && !elbowCapsDrawn && /-LowerArm\(/.test(filename)) {
+          this.drawJointCaps("elbow");
+          elbowCapsDrawn = true;
+        }
+        if (this.jointCapsVisible && !kneeCapsDrawn && /-LowerLeg\(/.test(filename)) {
+          this.drawJointCaps("knee");
+          kneeCapsDrawn = true;
+        }
         ctx.save();
         const attached = Object.prototype.hasOwnProperty.call(this.config.parts, filename)
           ? this.config.parts[filename] : null;
@@ -222,6 +236,33 @@
     showMarkers(visible) {
       this.markersVisible = Boolean(visible);
       this.render();
+    }
+
+    showJointCaps(visible) {
+      this.jointCapsVisible = Boolean(visible);
+      this.render();
+    }
+
+    // Test-only circle sprites behind elbows and knees, without modifying
+    // any PNG. pointFor() includes all ancestor rotations.
+    drawJointCaps(group) {
+      if (!this.jointCapsVisible) return;
+      const ctx = this.ctx;
+      ctx.save();
+      for (const [jointId, cap] of Object.entries(this.config.jointCaps || {})) {
+        if (cap.group !== group) continue;
+        const point = this.pointFor(jointId);
+        if (!point) continue;
+        const r = cap.radius * (this.jointCapScale[group] || 1);
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, r, 0, 2 * Math.PI);
+        ctx.fillStyle = "#F7E4E5";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(143, 83, 96, 0.34)";
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     showReference(image, visible) {
