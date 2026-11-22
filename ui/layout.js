@@ -143,7 +143,30 @@
   if ("ResizeObserver" in window) new ResizeObserver(sizeUi).observe(artboard);
   sizeUi();
 
-  // Selection state only: these tabs and rooms do not change the game screen yet.
+  // Keep the four original room buttons; only the available panel changes.
+  // No character coordinates or body rendering are changed by room navigation.
+  const validRooms = new Set(rooms.map(([id]) => id));
+  function setRoom(id) {
+    if (!validRooms.has(id)) return false;
+    scene.dataset.room = id;
+    overlay.querySelectorAll(".ui-room-button").forEach(button => {
+      if (button.dataset.room === id) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
+    window.dispatchEvent(new CustomEvent("dresslab:room-change", {
+      detail: { room: id }
+    }));
+    return true;
+  }
+  const requestedRoom = new URLSearchParams(window.location.search).get("room");
+  setRoom(validRooms.has(requestedRoom) ? requestedRoom : "dress");
+  window.DressLabRooms = {
+    get current() { return scene.dataset.room; },
+    setRoom
+  };
+
+  // Room buttons now reveal a real Magic Room shape panel. Other game rooms
+  // keep their current prototype state without gaining invented game logic.
   overlay.addEventListener("click", (event) => {
     const tab = event.target.closest(".ui-tabs__button");
     if (tab) {
@@ -156,11 +179,8 @@
 
     const room = event.target.closest(".ui-room-button");
     if (room) {
-      overlay.querySelectorAll(".ui-room-button").forEach(button => {
-        if (button === room) button.setAttribute("aria-current", "page");
-        else button.removeAttribute("aria-current");
-      });
-      selectionStatus.textContent = room.textContent + " 선택 · 방 이동 기능 미연결";
+      setRoom(room.dataset.room);
+      selectionStatus.textContent = room.textContent + " 선택";
       return;
     }
 
