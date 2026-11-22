@@ -40,6 +40,7 @@
     upperTorso: Object.freeze([90, 118]),
     armWidth: Object.freeze([80, 125]),
     armLength: Object.freeze([85, 120]),
+    handSize: Object.freeze([80, 125]),
     waist: Object.freeze([85, 120]),
     hips: Object.freeze([90, 120]),
     thighs: Object.freeze([85, 135]),
@@ -58,6 +59,7 @@
       this.upperTorso = 100;
       this.armWidth = 100;
       this.armLength = 100;
+      this.handSize = 100;
       this.waist = 100;
       this.hips = 100;
       this.thighs = 100;
@@ -155,6 +157,7 @@
         upperTorso: this.upperTorso,
         armWidth: this.armWidth,
         armLength: this.armLength,
+        handSize: this.handSize,
         waist: this.waist,
         hips: this.hips,
         thighs: this.thighs,
@@ -355,6 +358,90 @@
       return { filename, image: canvas, x: left, y: top };
     }
 
+    // A hand is attached to the *end* of the transformed forearm, using the
+    // same wrist pivot for drawing and the rig hierarchy. Close to the wrist,
+    // its cuff inherits the arm-width scale. Beyond that narrow cuff, it
+    // smoothly approaches the independent hand-size setting. This avoids a
+    // visible gap when hands and forearms have different thickness settings.
+    // Each row is mapped in the forearm's local bone axes; the hand is never
+    // stretched along the arm length a second time.
+    transformHand(base, wrist, movedWrist, elbow) {
+      const { filename, image } = base;
+      const sourceX = base.x || 0, sourceY = base.y || 0;
+      const width = image.width || image.naturalWidth;
+      const height = image.height || image.naturalHeight;
+      const size = this.handSize / 100;
+      const armWidth = this.armWidth / 100;
+      const offsetX = movedWrist.x - wrist.x;
+      const offsetY = movedWrist.y - wrist.y;
+
+      // Preserve exact source artwork when both shape sliders are neutral.
+      // This is important for image quality and the existing idle renderer.
+      if (size === 1 && armWidth === 1) {
+        return { ...base, x: sourceX + offsetX, y: sourceY + offsetY };
+      }
+
+      const dx = wrist.x - elbow.x, dy = wrist.y - elbow.y;
+      const length = Math.hypot(dx, dy);
+      if (!length) throw new Error("Cannot attach hand to zero-length forearm");
+      const ux = dx / length, uy = dy / length;
+      const vx = -uy, vy = ux;
+
+      // Measure depth along the forearm extension rather than screen Y; the
+      // two hands therefore stay symmetric even when forearms are slanted.
+      const depthRange = Math.max(20, Math.min(75, height * 0.7));
+      function transformRow(row) {
+        const xmid = sourceX + width / 2;
+        const ymid = sourceY + row + 0.5;
+        const depth = (xmid - wrist.x) * ux + (ymid - wrist.y) * uy;
+        const widthScale = armWidth + (size - armWidth) *
+          smoothstep(0, depthRange, Math.max(0, depth));
+        const a = size * ux * ux + widthScale * vx * vx;
+        const b = size * ux * uy + widthScale * vx * vy;
+        const c = size * uy * ux + widthScale * vx * vy;
+        const d = size * uy * uy + widthScale * vy * vy;
+        // The wrist source point maps exactly to the NEW wrist pivot.
+        const tx = movedWrist.x + a * (sourceX - wrist.x) + c * (sourceY - wrist.y);
+        const ty = movedWrist.y + b * (sourceX - wrist.x) + d * (sourceY - wrist.y);
+        return { a, b, c, d, tx, ty, widthScale };
+      }
+
+      const transformed = [];
+      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+      for (let row = 0; row < height; row++) {
+        const m = transformRow(row);
+        transformed.push(m);
+        for (const [x, y] of [
+          [0, row], [width, row], [0, row + 1], [width, row + 1]
+        ]) {
+          const px = m.a * x + m.c * y + m.tx;
+          const py = m.b * x + m.d * y + m.ty;
+          left = Math.min(left, px);
+          right = Math.max(right, px);
+          top = Math.min(top, py);
+          bottom = Math.max(bottom, py);
+        }
+      }
+      left = Math.floor(left) - 3;
+      top = Math.floor(top) - 3;
+      right = Math.ceil(right) + 3;
+      bottom = Math.ceil(bottom) + 3;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, right - left);
+      canvas.height = Math.max(1, bottom - top);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not attach hand sprite");
+      ctx.imageSmoothingEnabled = true;
+      for (let row = 0; row < height; row++) {
+        const m = transformed[row];
+        ctx.setTransform(m.a, m.b, m.c, m.d, m.tx - left, m.ty - top);
+        ctx.drawImage(image, 0, row, width, 1, 0, row, width, 1);
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.canvasesBuilt++;
+      return { filename, image: canvas, x: left, y: top };
+    }
+
     // A row-based, smoothly interpolated horizontal mesh: one source image
     // row maps to a stretched/shrunk output row. Vertical coordinates do not
     // change, so hip/knee pivots and animations stay in the same coordinate
@@ -444,9 +531,9 @@
         }
       }
 
-      // Keep a continuous parent-child arm chain. Both upper and lower arm
-      // segments receive the SAME width/length factors. The wrist and hand
-      // move with the limb, but the hand artwork itself is never stretched.
+      // Keep the whole shoulder -> elbow -> wrist -> hand attachment chain.
+      // Upper and lower arm share the same shape scale, while the hand has an
+      // independent size parameter and a wrist cuff matched to arm thickness.
       for (const side of ["L", "R"]) {
         const shoulder = this.basePivots["shoulder" + side];
         const elbow = this.basePivots["elbow" + side];
@@ -485,10 +572,9 @@
         const handName = side === "L" ? "16-hand(L).PNG" : "17-Hand(R).PNG";
         const handBase = this.baseLayers.get(handName);
         if (!handBase) throw new Error("Missing hand image: " + handName);
-        output.set(handName, { ...handBase,
-          x: (handBase.x || 0) + movedWrist.x - wrist.x,
-          y: (handBase.y || 0) + movedWrist.y - wrist.y
-        });
+        output.set(handName, this.transformHand(
+          handBase, wrist, movedWrist, elbow
+        ));
         for (const [id, point] of [
           ["shoulder", shiftedShoulder],
           ["elbow", movedElbow],
@@ -514,7 +600,7 @@
       return this.setShape({
         head: 100, neck: 100, neckWidth: 100,
         upperTorso: 100, armWidth: 100, armLength: 100,
-        waist: 100, hips: 100,
+        handSize: 100, waist: 100, hips: 100,
         thighs: 100, calves: 100
       });
     }
