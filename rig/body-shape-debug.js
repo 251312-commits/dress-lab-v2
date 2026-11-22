@@ -55,16 +55,18 @@
       ["neck", "목 길이"],
       ["neckWidth", "목 두께"],
       ["upperTorso", "상체 폭"],
+      ["bust", "바스트"],
       ["armWidth", "팔 두께"],
       ["armLength", "팔 길이"],
       ["handSize", "손 크기"],
       ["waist", "허리 관절"],
       ["hips", "골반"],
+      ["ratio", "상하체 비율"],
       ["thighs", "허벅지"],
       ["calves", "종아리"]
     ];
     panel.innerHTML = [
-      '<header class="shape-head"><strong>체형 조절 · V5</strong><div>',
+      '<header class="shape-head"><strong>체형 조절 · V7</strong><div>',
         '<button type="button" id="shape-reset">초기화</button>',
         '<button type="button" id="shape-collapse" aria-expanded="true">접기</button>',
       '</div></header>',
