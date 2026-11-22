@@ -173,7 +173,7 @@
           ctx.rotate(angle * RAD);
           ctx.translate(-x, -y);
         }
-        ctx.drawImage(image, x, y);
+        ctx.drawImage(this.skinTone ? this.skinTone.getImage(image) : image, x, y);
         ctx.restore();
       }
       ctx.restore();
@@ -256,7 +256,7 @@
         const r = cap.radius * (this.jointCapScale[group] || 1);
         ctx.beginPath();
         ctx.arc(point.x, point.y, r, 0, 2 * Math.PI);
-        ctx.fillStyle = "#F7E4E5";
+        ctx.fillStyle = this.skinTone ? this.skinTone.getJointCapFill() : "#F7E4E5";
         ctx.fill();
         ctx.strokeStyle = "rgba(143, 83, 96, 0.34)";
         ctx.lineWidth = 1.3;
