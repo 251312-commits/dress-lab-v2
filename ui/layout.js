@@ -171,6 +171,7 @@
   function setRoom(id) {
     if (!validRooms.has(id)) return false;
     scene.dataset.room = id;
+    artboard.dataset.room = id; // Care Room portrait crop follows existing navigation.
     const tabConfig = id === "magic" ? magicTabs : tabs;
     overlay.querySelectorAll(".ui-tabs__button").forEach((button, index) => {
       const [key, label] = tabConfig[index];
