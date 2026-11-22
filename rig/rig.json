@@ -101,9 +101,9 @@
   "parts": {
     "01-Head.PNG": "torso",
     "02-Neck.PNG": "torso",
-    "03-UpperArm(L).PNG": "shoulderL",
-    "04-UpperArm(R).PNG": "shoulderR",
-    "05-Bust.PNG": "torso",
+    "03-Bust.PNG": "torso",
+    "04-UpperArm(L).PNG": "shoulderL",
+    "05-UpperArm(R).PNG": "shoulderR",
     "06-UpperTorso.PNG": "torso",
     "07-LowerTorso.PNG": null,
     "08-TorsoJoint.PNG": "torso",

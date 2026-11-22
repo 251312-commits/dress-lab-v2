@@ -23,7 +23,7 @@
   const PARTS = Object.freeze({
     "01-Head.PNG": ["head", null],
     "02-Neck.PNG": ["neck", null],
-    "05-Bust.PNG": ["bust", null],
+    "03-Bust.PNG": ["bust", null],
     "06-UpperTorso.PNG": ["upperTorso", null],
     "07-LowerTorso.PNG": ["lowerTorso", null],
     "08-TorsoJoint.PNG": ["waistJoint", null],
@@ -173,8 +173,9 @@
         hip: hipLineY,
         bottom: footBottomY
       });
-      const bustPart = this.sources.get("05-Bust.PNG");
+      const bustPart = this.sources.get("03-Bust.PNG");
       this.bustTopY = bustPart.rows.find(Boolean).y;
+      this.bustBottomY = [...bustPart.rows].reverse().find(Boolean).y;
     }
 
     getState() {
@@ -483,25 +484,44 @@
     // preserving the current upper-torso width adjustment.
     resizeBust(layer) {
       if (this.bust === 100) return layer;
-      const vertical = this.bust / 100;
-      const horizontal = 1 + 0.65 * (vertical - 1);
-      const { image } = layer;
-      const width = image.width || image.naturalWidth;
-      const height = image.height || image.naturalHeight;
-      const centerX = this.basePivots.torso.x;
-      const newLeft = centerX + (layer.x - centerX) * horizontal;
-      const newTop = this.bustTopY + (layer.y - this.bustTopY) * vertical;
-      const minX = Math.floor(newLeft) - 2, minY = Math.floor(newTop) - 2;
+      const scale = this.bust / 100;
+      const image = layer.image;
+      const w = image.width || image.naturalWidth;
+      const h = image.height || image.naturalHeight;
+      const sourceX = layer.x || 0;
+      const sourceY = layer.y || 0;
+      const anchorX = this.basePivots.torso.x;
+      const anchorY = this.bustTopY;
+      const span = Math.max(1, this.bustBottomY - anchorY);
+      // Preserve the ENTIRE top edge (position and width). Grow/shrink
+      // horizontally on both sides from the center toward the lower bust.
+      const widthAt = y => 1 + (scale - 1) *
+        smoothstep(0, 0.80, clamp((y - anchorY) / span, 0, 1));
+      let minX = Infinity, maxX = -Infinity;
+      for (let row = 0; row < h; row++) {
+        const sx = widthAt(sourceY + row);
+        const left = anchorX + (sourceX - anchorX) * sx;
+        minX = Math.min(minX, left);
+        maxX = Math.max(maxX, left + w * sx);
+      }
+      const minY = anchorY + (sourceY - anchorY) * scale;
+      const maxY = anchorY + (sourceY + h - anchorY) * scale;
+      const originX = Math.floor(minX) - 3;
+      const originY = Math.floor(minY) - 3;
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.ceil(newLeft + width * horizontal - minX) + 2);
-      canvas.height = Math.max(1, Math.ceil(newTop + height * vertical - minY) + 2);
+      canvas.width = Math.max(1, Math.ceil(maxX) - originX + 3);
+      canvas.height = Math.max(1, Math.ceil(maxY) - originY + 3);
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("Cannot resize the bust PNG");
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(image, newLeft - minX, newTop - minY,
-        width * horizontal, height * vertical);
+      for (let row = 0; row < h; row++) {
+        const sx = widthAt(sourceY + row);
+        const x = anchorX + (sourceX - anchorX) * sx - originX;
+        const y = anchorY + (sourceY + row - anchorY) * scale - originY;
+        ctx.drawImage(image, 0, row, w, 1, x, y, w * sx, scale);
+      }
       this.canvasesBuilt++;
-      return { filename: layer.filename, image: canvas, x: minX, y: minY };
+      return { filename: layer.filename, image: canvas, x: originX, y: originY };
     }
 
     // Source-coordinate mapping for the torso-to-leg ratio:
@@ -670,8 +690,8 @@
         };
 
         const filenames = [
-          "03-UpperArm(" + side + ").PNG",
           "04-UpperArm(" + side + ").PNG",
+          "05-UpperArm(" + side + ").PNG",
           "14-LowerArm(" + side + ").PNG",
           "15-LowerArm(" + side + ").PNG"
         ];
