@@ -1,0 +1,174 @@
+/* Care Room: portrait sketch layout on the existing 1206 × 2622 artboard.
+   All measurements are artboard coordinates and scale with ui/layout.js.
+   These are UI placeholders, not yet connected to care-treatment mechanics. */
+
+.ui-care-room {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: none;
+  pointer-events: none;
+}
+.ui-scene[data-room="care"] .ui-care-room { display: block; }
+
+/* The sketch replaces the generic dialogue/action row only in Care Room. */
+.ui-scene[data-room="care"] .ui-dialog,
+.ui-scene[data-room="care"] .ui-actions {
+  display: none;
+}
+
+/* Use the same unaltered doll canvas, zoomed toward the face for close-up care.
+   Percent translations are relative to the canvas box, not physical CSS pixels,
+   so the crop remains consistent on differently sized mobile viewports. */
+#artboard[data-room="care"] #character {
+  transform-origin: top left;
+  transform: translate(-9%, -13%) scale(2.12);
+}
+@media (prefers-reduced-motion: no-preference) {
+  #character { transition: transform 260ms ease; }
+}
+
+.ui-care-tabs {
+  position: absolute;
+  top: 46px;
+  left: 42px;
+  width: 1122px;
+  height: 194px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 44px;
+  pointer-events: none;
+}
+.ui-care-tab {
+  width: 100%;
+  height: 100%;
+  padding: 6px;
+  border: 5px solid #282426 !important;
+  background: #f5f5f4 !important;
+  font-size: 43px !important;
+  font-weight: 750 !important;
+  letter-spacing: -.04em;
+  white-space: nowrap;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+}
+.ui-care-tab[data-care-tab="relaxation"] {
+  font-size: 37px !important;
+}
+.ui-care-tab[aria-pressed="true"] {
+  background: #dceef3 !important;
+}
+
+.ui-care-dialog {
+  position: absolute;
+  top: 266px;
+  left: 39px;
+  width: 1129px;
+  height: 420px;
+}
+.ui-care-dialog svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: white;
+  stroke: #282426;
+  stroke-width: 5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.ui-care-dialog__text {
+  position: absolute;
+  left: 30px;
+  right: 30px;
+  top: 0;
+  height: 374px;
+  padding: 22px 45px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-size: 63px;
+  line-height: 1.35;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  font-family: "Noto Serif KR", "AppleMyungjo", serif;
+  pointer-events: none;
+}
+
+/* Talk button floats beside the close-up character, as in the reference. */
+.ui-care-talk {
+  position: absolute;
+  left: 950px;
+  top: 1690px;
+  width: 220px;
+  height: 250px;
+  border: 5px solid #292629 !important;
+  background: #f4f4f2 !important;
+  font-family: "Noto Serif KR", "AppleMyungjo", serif !important;
+  font-size: 59px !important;
+  font-weight: 650 !important;
+  pointer-events: auto;
+}
+.ui-care-talk:active { background: #e1ecee !important; }
+
+/* Tools sit on the central shelf line; no invented treatment artwork. */
+.ui-care-shelf {
+  position: absolute;
+  left: 0;
+  top: 1977px;
+  width: 1206px;
+  height: 288px;
+  pointer-events: none;
+}
+.ui-care-shelf__line {
+  position: absolute;
+  top: 138px;
+  left: 0;
+  width: 100%;
+  border-top: 5px solid #282426;
+}
+.ui-care-tools {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0 88px;
+}
+.ui-care-tool {
+  width: 266px;
+  height: 266px;
+  border: 6px solid #282426 !important;
+  border-radius: 50% !important;
+  background: #e8f2e5 !important;
+  font-size: 59px !important;
+  font-weight: 650 !important;
+  font-family: "Noto Serif KR", "AppleMyungjo", serif !important;
+  letter-spacing: -.05em;
+  white-space: nowrap;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+}
+.ui-care-tool[aria-pressed="true"] {
+  background: #bce6b7 !important;
+  box-shadow: inset 0 0 0 8px #fff;
+}
+
+/* The four existing room buttons are preserved, merely given a neutral
+   placeholder tint rather than the sketch's temporary blue button markup. */
+.ui-scene[data-room="care"] .ui-room-button {
+  background: #f6f6f4;
+}
+.ui-scene[data-room="care"] .ui-room-button[aria-current="page"] {
+  background: #dceef3;
+}
+.ui-care-tab:focus-visible,
+.ui-care-tool:focus-visible,
+.ui-care-talk:focus-visible {
+  outline: 7px solid #426e8f;
+  outline-offset: 6px;
+}
