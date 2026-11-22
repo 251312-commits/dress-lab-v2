@@ -53,19 +53,22 @@
     const controls = [
       ["head", "머리 크기"],
       ["neck", "목 길이"],
+      ["neckWidth", "목 두께"],
       ["upperTorso", "상체 폭"],
+      ["armWidth", "팔 두께"],
+      ["armLength", "팔 길이"],
       ["waist", "허리 관절"],
       ["hips", "골반"],
       ["thighs", "허벅지"],
       ["calves", "종아리"]
     ];
     panel.innerHTML = [
-      '<header class="shape-head"><strong>체형 조절 · V4</strong><div>',
+      '<header class="shape-head"><strong>체형 조절 · V5</strong><div>',
         '<button type="button" id="shape-reset">초기화</button>',
         '<button type="button" id="shape-collapse" aria-expanded="true">접기</button>',
       '</div></header>',
       '<div class="shape-body">',
-        '<p class="shape-intro">머리 크기는 턱·목 연결점을 기준으로 조절하고, 목은 어깨 쪽을 고정한 채 길어지거나 짧아져. 다른 체형 조절도 그대로 유지해.</p>',
+        '<p class="shape-intro">머리는 70%까지 축소할 수 있고, 목 두께와 팔 전체 굵기·길이도 조절할 수 있어. 팔꿈치·손목은 팔 길이에 맞춰 이동해.</p>',
         controls.map(([key, label]) => {
           const [min, max] = shape.limits[key];
           return [
