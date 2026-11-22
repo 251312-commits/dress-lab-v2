@@ -57,7 +57,8 @@
       this.thighs = 100;
       this.calves = 100;
       this.limits = LIMITS;
-      this.hipInfluence = 1.00;
+      // Thigh thickness contributes 70% of its delta at the pelvis joint.
+      this.hipInfluence = 0.70;
       this.kneeInfluence = 0.30;
       this.sources = new Map();
       this.baseLayers = new Map(rig.layers.map(layer => [layer.filename, { ...layer }]));
@@ -156,8 +157,9 @@
       };
     }
 
-    // The pelvis and thigh multipliers share the same hip attachment width.
-    // If hips is neutral, this is exactly the former thigh-only hip rule.
+    // The pelvis and upper thighs share the same joint multiplier.
+    // The hips slider contributes fully; the THIGH change contributes 70%.
+    // Applying this same value to both images is essential at the seam.
     hipScale() {
       return (this.hips / 100) * (1 + this.hipInfluence * (this.thighs / 100 - 1));
     }
@@ -193,10 +195,13 @@
           smoothstep(1166.5, 1280, y);
       }
       if (kind === "pelvis") {
-        // At the pelvis top match LowerTorso. At the hip attachment match
-        // UpperLeg, even when both hip and thigh controls are changed.
+        // Inspection of the source alpha contours shows that the wide
+        // pelvis/upper-thigh edges meet near source y=1330. The hip pivot at
+        // y≈1368 is near the narrow crotch tip, NOT the visible seam.
+        // Match LowerTorso at y=1280 and reach the *shared* hip multiplier
+        // by y=1330, where both outer contours line up.
         return pelvisScale + (hipConnection - pelvisScale) *
-          smoothstep(1260, 1367.8, y);
+          smoothstep(1280, 1330, y);
       }
 
       const hip = this.rig.config.pivots["hip" + side].y;
@@ -348,9 +353,12 @@
         shoulderOffsets[side] =
           (this.basePivots["shoulder" + side].x - centerX) *
           (this.upperTorso / 100 - 1);
+        // Move the hip/knee joint and BOTH leg pieces along the same global
+        // pelvis expansion used at the seam. Using only the hips slider here
+        // would leave a gap when the thigh slider changes the shared width.
         hipOffsets[side] =
           (this.basePivots["hip" + side].x - centerX) *
-          (this.hips / 100 - 1);
+          (this.hipScale() - 1);
       }
 
       const output = new Map();
