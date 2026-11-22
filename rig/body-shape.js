@@ -114,20 +114,29 @@
         throw new Error("Body part set is incomplete: expected eleven separate PNGs");
       }
 
-      // Find the exposed neck span from its source pixels and the rig
-      // shoulder pivots. A chin-side anchor inside this span is shared by
-      // head resizing and neck length changes; no rotation axis is added.
+      // The neck PNG (around y=895..978) overlaps UpperTorso (from y=961),
+      // while the shoulder rotation pivots are lower (y=1013). The old
+      // shoulder-pivot stretch moved even the neck's lower edge, opening a gap.
+      // Use the actual PNG overlap to keep the lower attachment stationary.
       const neckSource = this.sources.get("02-Neck.PNG");
+      const torsoSource = this.sources.get("04-UpperTorso.PNG");
       const firstNeckRow = neckSource.rows.find(row => row);
-      const shoulderY = (this.basePivots.shoulderL.y + this.basePivots.shoulderR.y) / 2;
+      const lastNeckRow = [...neckSource.rows].reverse().find(row => row);
+      const firstTorsoRow = torsoSource.rows.find(row => row);
       const neckTopY = firstNeckRow.y;
-      const span = Math.max(1, shoulderY - neckTopY);
+      const neckBottomY = lastNeckRow.y;
+      const torsoTopY = firstTorsoRow.y;
+      const overlap = Math.max(0, neckBottomY - torsoTopY);
+      const neckBaseY = Math.max(torsoTopY, neckBottomY - Math.min(8, overlap * 0.5));
+      const span = Math.max(1, neckBaseY - neckTopY);
       this.headNeckAnchors = Object.freeze({
         x: this.basePivots.torso.x,
-        shoulderY,
         neckTopY,
+        neckBottomY,
+        torsoTopY,
+        neckBaseY,
         span,
-        jawY: neckTopY + span * 0.62
+        jawY: neckTopY + Math.min(31, span * 0.45)
       });
     }
 
@@ -211,9 +220,9 @@
         (calfScale - 1) * calfBulge;
     }
 
-    // Change neck length without moving the shoulder attachment.
-    // Neck rows below the shoulder line are kept at the original location,
-    // while only the exposed top portion is stretched vertically.
+    // Change length without moving the physical neck/torso overlap.
+    // Shoulder rotation pivots are NOT the neck attachment line.
+    // Lower overlapping pixels remain fixed while the exposed top stretches.
     neckOffsetY() {
       return (1 - this.neck / 100) * this.headNeckAnchors.span;
     }
@@ -244,10 +253,10 @@
     deformNeck(source) {
       if (this.neck === 100) return { filename: source.filename,
         image: source.image, x: source.x, y: source.y };
-      const { shoulderY } = this.headNeckAnchors;
+      const { neckBaseY } = this.headNeckAnchors;
       const scale = this.neck / 100;
-      const cut = clamp(shoulderY - source.y, 0, source.h);
-      const topY = shoulderY + (source.y - shoulderY) * scale;
+      const cut = clamp(neckBaseY - source.y, 0, source.h);
+      const topY = neckBaseY + (source.y - neckBaseY) * scale;
       const originY = Math.floor(Math.min(topY, source.y)) - 2;
       const bottomY = source.y + source.h;
       const canvas = document.createElement("canvas");
