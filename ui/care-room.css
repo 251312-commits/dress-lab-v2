@@ -11,18 +11,27 @@
 }
 .ui-scene[data-room="care"] .ui-care-room { display: block; }
 
-/* Solid white rectangular floor behind both the tool shelf and the
-   four-room navigation. Masks the enlarged character below the shelf. */
+/* The white rectangular shelf backing begins at the horizontal line
+   crossing the tool circles, not at the top or bottom of the tools.
+   Shelf top (1977px) + line offset (138px) = 2115px. */
 .ui-scene[data-room="care"]::before {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
-  top: 1977px;
+  top: 2115px;
   bottom: 0;
   background: #fff;
   z-index: 4;
   pointer-events: none;
+}
+
+/* The face close-up must never spill into the letterboxed region when
+   the viewport's aspect ratio differs from the 1206 × 2622 artboard.
+   The surrounding stage is already white; clip only the Care Room. */
+#artboard[data-room="care"] {
+  overflow: hidden;
+  background: #fff;
 }
 /* Keep the original room dock and its separator visible over the mask. */
 .ui-scene[data-room="care"] .ui-room-divider,
