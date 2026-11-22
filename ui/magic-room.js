@@ -13,9 +13,12 @@
   if (!scene || !editor) return;
 
   const controls = [
-    ["head", "머리 크기", 90, 113],
+    ["head", "머리 크기", 70, 113],
     ["neck", "목 길이", 78, 127],
+    ["neckWidth", "목 두께", 80, 120],
     ["upperTorso", "상체 폭", 90, 118],
+    ["armWidth", "팔 두께", 80, 125],
+    ["armLength", "팔 길이", 85, 120],
     ["waist", "허리 관절", 85, 120],
     ["hips", "골반", 90, 120],
     ["thighs", "허벅지", 85, 135],
