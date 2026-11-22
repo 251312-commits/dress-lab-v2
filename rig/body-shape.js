@@ -1,8 +1,11 @@
 /* Dress Lab V2 — locally linked body-shape deformation.
  *
  * Each isolated PNG piece is resampled in horizontal rows, never warped as a
- * whole character. UpperTorso/Bust -> TorsoJoint (waist) -> LowerTorso ->
- * Hips -> both upper legs -> both lower legs share smooth boundary values.
+ * whole character. Head and neck are separate: head size scales uniformly
+ * around the jaw/neck attachment, while neck length stretches only the
+ * neck region above the shoulders and carries the head vertically.
+ * UpperTorso/Bust -> TorsoJoint (waist) -> LowerTorso -> Hips -> both
+ * upper legs -> both lower legs still share smooth boundary values.
  *
  * Hip/shoulder positions follow the silhouette width (and carry their child
  * joints + sprite placements); the neutral 100% shape stays pixel identical.
@@ -18,6 +21,8 @@
   };
 
   const PARTS = Object.freeze({
+    "01-Head.PNG": ["head", null],
+    "02-Neck.PNG": ["neck", null],
     "03-Bust.PNG": ["bust", null],
     "04-UpperTorso.PNG": ["upperTorso", null],
     "05-LowerTorso.PNG": ["lowerTorso", null],
@@ -29,6 +34,8 @@
     "11-LowerLeg(R).PNG": ["lower", "R"]
   });
   const LIMITS = Object.freeze({
+    head: Object.freeze([90, 113]),
+    neck: Object.freeze([78, 127]),
     upperTorso: Object.freeze([90, 118]),
     waist: Object.freeze([85, 120]),
     hips: Object.freeze([90, 120]),
@@ -42,6 +49,8 @@
         throw new Error("DressLabBodyShape requires an initialized DressLabRig");
       }
       this.rig = rig;
+      this.head = 100;
+      this.neck = 100;
       this.upperTorso = 100;
       this.waist = 100;
       this.hips = 100;
@@ -69,7 +78,7 @@
         sample.width = w;
         sample.height = h;
         const context = sample.getContext("2d", { willReadFrequently: true });
-        if (!context) throw new Error("Cannot prepare leg image: " + layer.filename);
+        if (!context) throw new Error("Cannot prepare body image: " + layer.filename);
         context.drawImage(source.image, 0, 0);
         const rgba = context.getImageData(0, 0, w, h).data;
 
@@ -98,16 +107,34 @@
           }
         }
         sample.width = sample.height = 0;
-        if (!any) throw new Error("Empty leg image: " + layer.filename);
+        if (!any) throw new Error("Empty body image: " + layer.filename);
         this.sources.set(layer.filename, source);
       }
       if (this.sources.size !== Object.keys(PARTS).length) {
-        throw new Error("Body part set is incomplete: expected nine separate PNGs");
+        throw new Error("Body part set is incomplete: expected eleven separate PNGs");
       }
+
+      // Find the exposed neck span from its source pixels and the rig
+      // shoulder pivots. A chin-side anchor inside this span is shared by
+      // head resizing and neck length changes; no rotation axis is added.
+      const neckSource = this.sources.get("02-Neck.PNG");
+      const firstNeckRow = neckSource.rows.find(row => row);
+      const shoulderY = (this.basePivots.shoulderL.y + this.basePivots.shoulderR.y) / 2;
+      const neckTopY = firstNeckRow.y;
+      const span = Math.max(1, shoulderY - neckTopY);
+      this.headNeckAnchors = Object.freeze({
+        x: this.basePivots.torso.x,
+        shoulderY,
+        neckTopY,
+        span,
+        jawY: neckTopY + span * 0.62
+      });
     }
 
     getState() {
       return {
+        head: this.head,
+        neck: this.neck,
         upperTorso: this.upperTorso,
         waist: this.waist,
         hips: this.hips,
@@ -182,6 +209,66 @@
         (1 - smoothstep(0.52, 0.95, t));
       return 1 + (kneeConnection - 1) * kneeWeight +
         (calfScale - 1) * calfBulge;
+    }
+
+    // Change neck length without moving the shoulder attachment.
+    // Neck rows below the shoulder line are kept at the original location,
+    // while only the exposed top portion is stretched vertically.
+    neckOffsetY() {
+      return (1 - this.neck / 100) * this.headNeckAnchors.span;
+    }
+
+    deformHead(source) {
+      const scale = this.head / 100;
+      const neckShift = this.neckOffsetY();
+      if (this.head === 100) {
+        return { filename: source.filename, image: source.image,
+          x: source.x, y: source.y + neckShift };
+      }
+      const { x: cx, jawY } = this.headNeckAnchors;
+      const x = cx + (source.x - cx) * scale;
+      const y = jawY + (source.y - jawY) * scale + neckShift;
+      const scaledWidth = source.w * scale, scaledHeight = source.h * scale;
+      const x0 = Math.floor(x) - 2, y0 = Math.floor(y) - 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(x + scaledWidth - x0) + 2;
+      canvas.height = Math.ceil(y + scaledHeight - y0) + 2;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not resize head sprite");
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(source.image, x - x0, y - y0, scaledWidth, scaledHeight);
+      this.canvasesBuilt++;
+      return { filename: source.filename, image: canvas, x: x0, y: y0 };
+    }
+
+    deformNeck(source) {
+      if (this.neck === 100) return { filename: source.filename,
+        image: source.image, x: source.x, y: source.y };
+      const { shoulderY } = this.headNeckAnchors;
+      const scale = this.neck / 100;
+      const cut = clamp(shoulderY - source.y, 0, source.h);
+      const topY = shoulderY + (source.y - shoulderY) * scale;
+      const originY = Math.floor(Math.min(topY, source.y)) - 2;
+      const bottomY = source.y + source.h;
+      const canvas = document.createElement("canvas");
+      canvas.width = source.w;
+      canvas.height = Math.ceil(bottomY - originY) + 2;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not resize neck sprite");
+      ctx.imageSmoothingEnabled = true;
+      if (cut > 0) {
+        ctx.drawImage(source.image,
+          0, 0, source.w, cut,
+          0, topY - originY, source.w, cut * scale);
+      }
+      if (cut < source.h) {
+        ctx.drawImage(source.image,
+          0, cut, source.w, source.h - cut,
+          0, source.y + cut - originY, source.w, source.h - cut);
+      }
+      this.canvasesBuilt++;
+      return { filename: source.filename, image: canvas,
+        x: source.x, y: originY };
     }
 
     // A row-based, smoothly interpolated horizontal mesh: one source image
@@ -260,8 +347,14 @@
       const output = new Map();
       for (const [filename, source] of this.sources) {
         const [kind, side] = PARTS[filename];
-        output.set(filename, this.deform(source, kind, side,
-          kind === "upper" || kind === "lower" ? hipOffsets[side] : 0));
+        if (kind === "head") {
+          output.set(filename, this.deformHead(source));
+        } else if (kind === "neck") {
+          output.set(filename, this.deformNeck(source));
+        } else {
+          output.set(filename, this.deform(source, kind, side,
+            kind === "upper" || kind === "lower" ? hipOffsets[side] : 0));
+        }
       }
 
       // Preserve source pixels for arms and apply only a rigid translation.
@@ -292,6 +385,7 @@
 
     reset() {
       return this.setShape({
+        head: 100, neck: 100,
         upperTorso: 100, waist: 100, hips: 100,
         thighs: 100, calves: 100
       });
