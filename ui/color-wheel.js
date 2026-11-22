@@ -20,6 +20,9 @@
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const value = { h: 0, s: 0, b: 0 };
+  // HEX inputs must retain their exact 24-bit RGB value: integer HSB values
+  // cannot always round-trip colors such as the original skin #FAEDED.
+  let exactHex = null;
   let pointerMode = null;
   let pointerId = null;
 
@@ -83,8 +86,10 @@
   }
 
   function paint(announce = true) {
-    const rgb = hsvToRgb(value.h, value.s, value.b);
-    const hex = toHex(rgb);
+    const rgb = exactHex
+      ? [1, 3, 5].map(index => parseInt(exactHex.slice(index, index + 2), 16))
+      : hsvToRgb(value.h, value.s, value.b);
+    const hex = exactHex || toHex(rgb);
     const pureHue = toHex(hsvToRgb(value.h, 100, 100));
     const satStart = toHex(hsvToRgb(value.h, 0, value.b));
     const satEnd = toHex(hsvToRgb(value.h, 100, value.b));
@@ -135,6 +140,7 @@
 
   function setColor(next) {
     if (!next || typeof next !== "object") return;
+    exactHex = null;
     for (const channel of Object.keys(ranges)) {
       if (next[channel] === undefined) continue;
       const number = Number(next[channel]);
@@ -149,7 +155,9 @@
     const match = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
     if (!match) return false;
     const n = parseInt(match[1], 16);
-    setColor(rgbToHsv((n >> 16) & 255, (n >> 8) & 255, n & 255));
+    Object.assign(value, rgbToHsv((n >> 16) & 255, (n >> 8) & 255, n & 255));
+    exactHex = "#" + match[1].toUpperCase();
+    paint();
     return true;
   }
 
@@ -251,7 +259,7 @@
   });
 
   const api = {
-    getColor: () => ({ ...value, hex: toHex(hsvToRgb(value.h, value.s, value.b)) }),
+    getColor: () => ({ ...value, hex: exactHex || toHex(hsvToRgb(value.h, value.s, value.b)) }),
     setColor,
     setHex
   };
