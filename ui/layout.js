@@ -21,10 +21,17 @@
     '</svg>'
   ].join("");
 
+  // Keep Dress Room's original tab names. The Magic Room tabs have their
+  // own top-to-bottom labels: 체형 → 피부톤 → 얼굴.
   const tabs = [
     ["color", "색상"],
     ["clothes", "옷"],
     ["review", "평가"]
+  ];
+  const magicTabs = [
+    ["body", "체형"],
+    ["skin", "피부톤"],
+    ["face", "얼굴"]
   ];
   const items = [
     ["shirt", "상의"],
@@ -146,9 +153,32 @@
   // Keep the four original room buttons; only the available panel changes.
   // No character coordinates or body rendering are changed by room navigation.
   const validRooms = new Set(rooms.map(([id]) => id));
+  function setTab(tabName) {
+    const isMagic = scene.dataset.room === "magic";
+    const config = isMagic ? magicTabs : tabs;
+    if (!config.some(([id]) => id === tabName)) return false;
+    scene.dataset.magicTab = isMagic ? tabName : "";
+    overlay.querySelectorAll(".ui-tabs__button").forEach(button => {
+      button.setAttribute("aria-pressed", String(button.dataset.tab === tabName));
+    });
+    if (isMagic) {
+      window.dispatchEvent(new CustomEvent("dresslab:magic-tab-change", {
+        detail: { tab: tabName }
+      }));
+    }
+    return true;
+  }
   function setRoom(id) {
     if (!validRooms.has(id)) return false;
     scene.dataset.room = id;
+    const tabConfig = id === "magic" ? magicTabs : tabs;
+    overlay.querySelectorAll(".ui-tabs__button").forEach((button, index) => {
+      const [key, label] = tabConfig[index];
+      button.dataset.tab = key;
+      button.textContent = label;
+      button.setAttribute("aria-label", label);
+    });
+    setTab(tabConfig[0][0]);
     overlay.querySelectorAll(".ui-room-button").forEach(button => {
       if (button.dataset.room === id) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
@@ -162,7 +192,8 @@
   setRoom(validRooms.has(requestedRoom) ? requestedRoom : "dress");
   window.DressLabRooms = {
     get current() { return scene.dataset.room; },
-    setRoom
+    setRoom,
+    setTab
   };
 
   // Room buttons now reveal a real Magic Room shape panel. Other game rooms
@@ -170,9 +201,7 @@
   overlay.addEventListener("click", (event) => {
     const tab = event.target.closest(".ui-tabs__button");
     if (tab) {
-      overlay.querySelectorAll(".ui-tabs__button").forEach(button => {
-        button.setAttribute("aria-pressed", String(button === tab));
-      });
+      setTab(tab.dataset.tab);
       selectionStatus.textContent = tab.getAttribute("aria-label") + " 카테고리 선택";
       return;
     }
