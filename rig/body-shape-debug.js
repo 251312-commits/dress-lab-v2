@@ -1,4 +1,4 @@
-/* Dress Lab V2 — five-part body-shape testing controls.
+/* Dress Lab V2 — head/neck and five-body-part testing controls.
  * Only displayed when the page is opened with ?body=1.
  * Limits are read directly from the same config as the deformation engine.
  */
@@ -51,6 +51,8 @@
     panel.id = "body-shape-panel";
     panel.setAttribute("aria-label", "체형 조절 실험");
     const controls = [
+      ["head", "머리 크기"],
+      ["neck", "목 길이"],
       ["upperTorso", "상체 폭"],
       ["waist", "허리 관절"],
       ["hips", "골반"],
@@ -58,12 +60,12 @@
       ["calves", "종아리"]
     ];
     panel.innerHTML = [
-      '<header class="shape-head"><strong>체형 조절 · V3</strong><div>',
+      '<header class="shape-head"><strong>체형 조절 · V4</strong><div>',
         '<button type="button" id="shape-reset">초기화</button>',
         '<button type="button" id="shape-collapse" aria-expanded="true">접기</button>',
       '</div></header>',
       '<div class="shape-body">',
-        '<p class="shape-intro">각 부위를 따로 조절해도 연결부의 폭은 함께 바뀌어. 허리는 두 토르소 사이의 관절 크기를 조절해.</p>',
+        '<p class="shape-intro">머리 크기는 턱·목 연결점을 기준으로 조절하고, 목은 어깨 쪽을 고정한 채 길어지거나 짧아져. 다른 체형 조절도 그대로 유지해.</p>',
         controls.map(([key, label]) => {
           const [min, max] = shape.limits[key];
           return [
@@ -78,6 +80,7 @@
         }).join(""),
         '<p class="shape-intro shape-limit">종아리 상한 115% · 엔진과 슬라이더에 동일하게 적용됨</p>',
         '<div class="shape-notes" role="status" aria-live="polite">',
+          '<div><span>머리 높이 이동</span><output id="shape-neck-shift-value">0px</output></div>',
           '<div><span>허리 연결부</span><output id="shape-waist-seam-value">100.0%</output></div>',
           '<div><span>골반 → 허벅지 연결부</span><output id="shape-hip-value">100.0%</output></div>',
           '<div><span>무릎 위·아래 공통</span><output id="shape-knee-value">100.0%</output></div>',
@@ -122,6 +125,11 @@
         input.value = String(state[key]);
         outputs[key].textContent = state[key] + "%";
       }
+      // Head position follows neck stretch while torso joints remain fixed.
+      const headMove = shape.neckOffsetY();
+      panel.querySelector("#shape-neck-shift-value").textContent =
+        Math.abs(headMove).toFixed(1) + "px " +
+        (headMove < -0.01 ? "↑" : headMove > 0.01 ? "↓" : "—");
       // Both sides of each seam use the same computed scale.
       panel.querySelector("#shape-waist-seam-value").textContent = state.waist.toFixed(1) + "%";
       panel.querySelector("#shape-hip-value").textContent = (state.hipScale * 100).toFixed(1) + "%";
