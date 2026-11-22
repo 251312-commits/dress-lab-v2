@@ -320,9 +320,11 @@
       const L = this.armLength / 100, W = this.armWidth / 100;
 
       if (L === 1 && W === 1) {
+        const dx = position.x - start.x;
+        const dy = position.y - start.y;
         return { ...base,
-          x: sourceX + position.x - start.x,
-          y: sourceY + position.y - start.y };
+          x: Math.abs(dx) < 1e-8 ? sourceX : sourceX + dx,
+          y: Math.abs(dy) < 1e-8 ? sourceY : sourceY + dy };
       }
 
       const dx = end.x - start.x, dy = end.y - start.y;
@@ -378,7 +380,9 @@
       // Preserve exact source artwork when both shape sliders are neutral.
       // This is important for image quality and the existing idle renderer.
       if (size === 1 && armWidth === 1) {
-        return { ...base, x: sourceX + offsetX, y: sourceY + offsetY };
+        return { ...base,
+          x: Math.abs(offsetX) < 1e-8 ? sourceX : sourceX + offsetX,
+          y: Math.abs(offsetY) < 1e-8 ? sourceY : sourceY + offsetY };
       }
 
       const dx = wrist.x - elbow.x, dy = wrist.y - elbow.y;
