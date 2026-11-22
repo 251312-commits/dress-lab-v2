@@ -523,6 +523,12 @@
     // function, and no distortion accumulates when the slider is moved.
     warpRatioLayer(layer) {
       if (this.ratio === 100) return layer;
+      // Head and neck are above the shoulder anchor and must NEVER deform
+      // when changing the relative torso/leg lengths. This explicit rule
+      // also protects them when their sprite has sparse off-body pixels.
+      if (layer.filename === "01-Head.PNG" || layer.filename === "02-Neck.PNG") {
+        return layer;
+      }
       const image = layer.image;
       const width = image.width || image.naturalWidth;
       const height = image.height || image.naturalHeight;
