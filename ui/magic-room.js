@@ -1,7 +1,7 @@
 /* Dress Lab V2 • Magic Room shape editor
  *
  * The artboard UI is already scaled to the same 1206x2622 source coordinates
- * as the character. All seven actual V4 shape controls belong in this right
+ * as the character. All eleven current body-shape controls belong in this right
  * panel; the independent ?body=1 developer panel remains optional elsewhere.
  * This module owns UI state only: shape data is held by DressLabBodyShape.
  */
@@ -19,6 +19,7 @@
     ["upperTorso", "상체 폭", 90, 118],
     ["armWidth", "팔 두께", 80, 125],
     ["armLength", "팔 길이", 85, 120],
+    ["handSize", "손 크기", 80, 125],
     ["waist", "허리 관절", 85, 120],
     ["hips", "골반", 90, 120],
     ["thighs", "허벅지", 85, 135],
