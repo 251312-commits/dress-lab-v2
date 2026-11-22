@@ -53,8 +53,8 @@
   ].join("");
   editor.appendChild(panel);
 
-  // The skin tab uses its own HSB picker. This selects a skin-color value;
-  // the actual PNG recoloring pipeline is intentionally left untouched.
+  // Skin changes are sent to the rig via dresslab:skin-color-change.
+  // The original unshaded base color is #FAEDED.
   const skinPanel = document.createElement("section");
   skinPanel.className = "ui-magic-skin-panel";
   skinPanel.setAttribute("aria-label", "마법룸 피부톤 색상 선택");
@@ -77,16 +77,16 @@
     '<h2 class="ui-skin-title">피부톤</h2>',
     '<div class="ui-skin-colors">',
       '<div class="ui-wheel" aria-label="피부톤 색상환"></div>',
-      '<output class="ui-hex" aria-label="피부톤 색상 HEX 코드">#EBC4B0</output>',
+      '<output class="ui-hex" aria-label="피부톤 색상 HEX 코드">#FAEDED</output>',
       '<div class="ui-sliders" aria-label="피부톤 HSB 슬라이더">',
         skinSliders,
       '</div>',
     '</div>',
-    '<p class="ui-skin-note">선택한 피부톤은 색상 미리보기로 표시된다. 인형 피부에 적용하는 기능은 아직 연결되지 않았다.</p>'
+    '<p class="ui-skin-note">기본 피부색 #FAEDED · 색상 변경은 인형에 실시간 적용된다.</p>'
   ].join("");
   editor.appendChild(skinPanel);
   window.DressLabSkinColorWheel = window.DressLabColorPicker
-    ? window.DressLabColorPicker.mount(skinPanel.querySelector(".ui-skin-colors"), "skin", "#EBC4B0")
+    ? window.DressLabColorPicker.mount(skinPanel.querySelector(".ui-skin-colors"), "skin", "#FAEDED")
     : null;
 
   // Face controls are still a placeholder until the face editor exists.
