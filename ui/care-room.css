@@ -11,6 +11,26 @@
 }
 .ui-scene[data-room="care"] .ui-care-room { display: block; }
 
+/* Solid white rectangular floor behind both the tool shelf and the
+   four-room navigation. Masks the enlarged character below the shelf. */
+.ui-scene[data-room="care"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1977px;
+  bottom: 0;
+  background: #fff;
+  z-index: 4;
+  pointer-events: none;
+}
+/* Keep the original room dock and its separator visible over the mask. */
+.ui-scene[data-room="care"] .ui-room-divider,
+.ui-scene[data-room="care"] .ui-rooms {
+  z-index: 5;
+}
+
+
 /* The sketch replaces the generic dialogue/action row only in Care Room. */
 .ui-scene[data-room="care"] .ui-dialog,
 .ui-scene[data-room="care"] .ui-actions {
