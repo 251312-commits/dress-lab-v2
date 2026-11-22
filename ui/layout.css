@@ -606,12 +606,12 @@
 }
 
 
-/* Eleven body sliders fit the full 1206×2622 Magic Room artboard without an
+/* Thirteen body sliders fit the full 1206×2622 Magic Room artboard without an
  * inner scrollbar. The sidebar itself remains at its existing coordinates.
  * The grid reserves one flexible row per slider and a final reset/status row. */
 .ui-scene[data-room="magic"][data-magic-tab="body"] .ui-magic-panel {
   display: grid;
-  grid-template-rows: repeat(11, minmax(0, 1fr)) 50px 25px;
+  grid-template-rows: repeat(13, minmax(0, 1fr)) 50px 25px;
   align-content: stretch;
   overflow: hidden;
   padding: 12px 18px 16px 22px;
