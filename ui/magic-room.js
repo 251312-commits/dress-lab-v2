@@ -24,8 +24,8 @@
     ["waist", "허리 관절", 85, 120],
     ["hips", "골반", 90, 120],
     ["ratio", "상하체 비율", 82, 118],
-    ["thighs", "허벅지", 85, 135],
-    ["calves", "종아리", 85, 115]
+    ["thighs", "허벅지", 90, 125],
+    ["calves", "종아리", 92, 112]
   ];
 
   const panel = document.createElement("section");

@@ -84,7 +84,7 @@
             '</div>'
           ].join("");
         }).join(""),
-        '<p class="shape-intro shape-limit">종아리 상한 115% · 엔진과 슬라이더에 동일하게 적용됨</p>',
+        '<p class="shape-intro shape-limit">다리 조절 범위 · 허벅지 90~125% / 종아리 92~112%</p>',
         '<div class="shape-notes" role="status" aria-live="polite">',
           '<div><span>머리 높이 이동</span><output id="shape-neck-shift-value">0px</output></div>',
           '<div><span>허리 연결부</span><output id="shape-waist-seam-value">100.0%</output></div>',
