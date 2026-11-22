@@ -593,11 +593,76 @@
       return y + shift * (bottom - y) / (bottom - hip);
     }
 
+    // Inverse vertical raster for a leg when upper/lower-body ratio is edited.
+    // The old separate drawImage bands could leave a fine horizontal seam
+    // at the hip mapping break. All destination rows now have one fill path.
+    unmapRatioY(y) {
+      if (this.ratio === 100) return y;
+      const { top, hip, bottom } = this.ratioAnchors;
+      const newHip = this.mapRatioY(hip);
+      if (y <= top || y >= bottom) return y;
+      return y <= newHip
+        ? top + (y - top) * (hip - top) / (newHip - top)
+        : hip + (y - newHip) * (bottom - hip) / (bottom - newHip);
+    }
+
+    warpRatioLeg(layer) {
+      const sourceImage = layer.image;
+      const width = sourceImage.width || sourceImage.naturalWidth;
+      const height = sourceImage.height || sourceImage.naturalHeight;
+      const sourceY = layer.y || 0;
+      const top = this.mapRatioY(sourceY);
+      const bottom = this.mapRatioY(sourceY + height);
+      const originY = Math.floor(top) - 2;
+      const target = document.createElement("canvas");
+      target.width = width;
+      target.height = Math.max(1, Math.ceil(bottom) - originY + 2);
+      const c = target.getContext("2d");
+      const scratch = document.createElement("canvas");
+      scratch.width = width;
+      scratch.height = height;
+      const srcCtx = scratch.getContext("2d", { willReadFrequently: true });
+      if (!c || !srcCtx) throw new Error("Cannot resample leg ratio");
+      srcCtx.drawImage(sourceImage, 0, 0);
+      const src = srcCtx.getImageData(0, 0, width, height).data;
+      const bmp = c.createImageData(width, target.height), dst = bmp.data;
+      for (let y = 0; y < target.height; y++) {
+        const sy = this.unmapRatioY(originY + y + 0.5) - sourceY - 0.5;
+        const a = Math.floor(sy), b = a + 1;
+        const wb = sy - a, wa = 1 - wb;
+        const sourceA = a >= 0 && a < height ? a * width * 4 : -1;
+        const sourceB = b >= 0 && b < height ? b * width * 4 : -1;
+        const destRow = y * width * 4;
+        for (let x = 0; x < width; x++) {
+          const ia = sourceA < 0 ? -1 : sourceA + x * 4;
+          const ib = sourceB < 0 ? -1 : sourceB + x * 4;
+          const aa = ia < 0 ? 0 : src[ia + 3];
+          const ab = ib < 0 ? 0 : src[ib + 3];
+          const alpha = aa * wa + ab * wb;
+          if (alpha <= 0) continue;
+          const di = destRow + x * 4;
+          dst[di + 3] = Math.round(alpha);
+          for (let channel = 0; channel < 3; channel++) {
+            dst[di + channel] = Math.round(
+              ((ia < 0 ? 0 : src[ia + channel] * aa * wa) +
+               (ib < 0 ? 0 : src[ib + channel] * ab * wb)) / alpha);
+          }
+        }
+      }
+      c.putImageData(bmp, 0, 0);
+      scratch.width = scratch.height = 0;
+      this.canvasesBuilt++;
+      return { ...layer, image: target, y: originY };
+    }
+
     // Four or fewer vertical blits per sprite rather than hundreds of strips.
     // Both sides of the hip junction are mapped by the same continuous
     // function, and no distortion accumulates when the slider is moved.
     warpRatioLayer(layer) {
       if (this.ratio === 100) return layer;
+      if (/-(UpperLeg|LowerLeg)\([LR]\)\.PNG$/.test(layer.filename)) {
+        return this.warpRatioLeg(layer);
+      }
       // Head and neck are above the shoulder anchor and must NEVER deform
       // when changing the relative torso/leg lengths. This explicit rule
       // also protects them when their sprite has sparse off-body pixels.
