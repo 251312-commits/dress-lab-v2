@@ -69,8 +69,8 @@
       this.thighs = 100;
       this.calves = 100;
       this.limits = LIMITS;
-      // Thigh thickness contributes 70% of its delta at the pelvis joint.
-      this.hipInfluence = 0.70;
+      // Thigh thickness contributes 40% of its delta at the pelvis joint.
+      this.hipInfluence = 0.40;
       this.kneeInfluence = 0.30;
       this.sources = new Map();
       this.baseLayers = new Map(rig.layers.map(layer => [layer.filename, { ...layer }]));
@@ -201,7 +201,7 @@
     }
 
     // The pelvis and upper thighs share the same joint multiplier.
-    // The hips slider contributes fully; the THIGH change contributes 70%.
+    // The hips slider contributes fully; the THIGH change contributes 40%.
     // Applying this same value to both images is essential at the seam.
     hipScale() {
       return (this.hips / 100) * (1 + this.hipInfluence * (this.thighs / 100 - 1));
