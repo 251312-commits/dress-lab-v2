@@ -77,7 +77,7 @@
     '<h2 class="ui-skin-title">피부톤</h2>',
     '<div class="ui-skin-colors">',
       '<div class="ui-wheel" aria-label="피부톤 색상환"></div>',
-      '<output class="ui-hex" aria-label="피부톤 색상 HEX 코드">#E8BEAD</output>',
+      '<output class="ui-hex" aria-label="피부톤 색상 HEX 코드">#EBC4B0</output>',
       '<div class="ui-sliders" aria-label="피부톤 HSB 슬라이더">',
         skinSliders,
       '</div>',
@@ -86,7 +86,7 @@
   ].join("");
   editor.appendChild(skinPanel);
   window.DressLabSkinColorWheel = window.DressLabColorPicker
-    ? window.DressLabColorPicker.mount(skinPanel.querySelector(".ui-skin-colors"), "skin", "#E8BEAD")
+    ? window.DressLabColorPicker.mount(skinPanel.querySelector(".ui-skin-colors"), "skin", "#EBC4B0")
     : null;
 
   // Face controls are still a placeholder until the face editor exists.
