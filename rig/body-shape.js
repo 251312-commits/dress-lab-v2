@@ -34,9 +34,12 @@
     "11-LowerLeg(R).PNG": ["lower", "R"]
   });
   const LIMITS = Object.freeze({
-    head: Object.freeze([90, 113]),
+    head: Object.freeze([70, 113]),
     neck: Object.freeze([78, 127]),
+    neckWidth: Object.freeze([80, 120]),
     upperTorso: Object.freeze([90, 118]),
+    armWidth: Object.freeze([80, 125]),
+    armLength: Object.freeze([85, 120]),
     waist: Object.freeze([85, 120]),
     hips: Object.freeze([90, 120]),
     thighs: Object.freeze([85, 135]),
@@ -51,7 +54,10 @@
       this.rig = rig;
       this.head = 100;
       this.neck = 100;
+      this.neckWidth = 100;
       this.upperTorso = 100;
+      this.armWidth = 100;
+      this.armLength = 100;
       this.waist = 100;
       this.hips = 100;
       this.thighs = 100;
@@ -145,7 +151,10 @@
       return {
         head: this.head,
         neck: this.neck,
+        neckWidth: this.neckWidth,
         upperTorso: this.upperTorso,
+        armWidth: this.armWidth,
+        armLength: this.armLength,
         waist: this.waist,
         hips: this.hips,
         thighs: this.thighs,
@@ -256,33 +265,94 @@
     }
 
     deformNeck(source) {
-      if (this.neck === 100) return { filename: source.filename,
-        image: source.image, x: source.x, y: source.y };
-      const { neckBaseY } = this.headNeckAnchors;
-      const scale = this.neck / 100;
+      if (this.neck === 100 && this.neckWidth === 100) {
+        return { filename: source.filename,
+          image: source.image, x: source.x, y: source.y };
+      }
+      const { neckBaseY, x: neckAxis } = this.headNeckAnchors;
+      const lengthScale = this.neck / 100;
+      const thicknessScale = this.neckWidth / 100;
       const cut = clamp(neckBaseY - source.y, 0, source.h);
-      const topY = neckBaseY + (source.y - neckBaseY) * scale;
+      const topY = neckBaseY + (source.y - neckBaseY) * lengthScale;
       const originY = Math.floor(Math.min(topY, source.y)) - 2;
       const bottomY = source.y + source.h;
+
+      // Expand about the centerline, NOT the left edge of the neck PNG.
+      // This leaves its base centered inside the UpperTorso opening.
+      const scaledLeft = neckAxis + (source.x - neckAxis) * thicknessScale;
+      const scaledRight = scaledLeft + source.w * thicknessScale;
+      const originX = Math.floor(scaledLeft) - 2;
       const canvas = document.createElement("canvas");
-      canvas.width = source.w;
+      canvas.width = Math.ceil(scaledRight - originX) + 2;
       canvas.height = Math.ceil(bottomY - originY) + 2;
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("Could not resize neck sprite");
       ctx.imageSmoothingEnabled = true;
+      const x = scaledLeft - originX;
+      const w = source.w * thicknessScale;
       if (cut > 0) {
         ctx.drawImage(source.image,
           0, 0, source.w, cut,
-          0, topY - originY, source.w, cut * scale);
+          x, topY - originY, w, cut * lengthScale);
       }
       if (cut < source.h) {
         ctx.drawImage(source.image,
           0, cut, source.w, source.h - cut,
-          0, source.y + cut - originY, source.w, source.h - cut);
+          x, source.y + cut - originY, w, source.h - cut);
       }
       this.canvasesBuilt++;
       return { filename: source.filename, image: canvas,
-        x: source.x, y: originY };
+        x: originX, y: originY };
+    }
+
+    // Affine limb deformation, defined in bone coordinates. The arm is
+    // lengthened ALONG the original shoulder-elbow/wrist axis and thickened
+    // PERPENDICULAR to that axis. The source PNG and joint poses stay intact.
+    // Position is the new start pivot after the parent's shoulder/arm motion.
+    transformArm(base, start, end, position) {
+      const { filename, image } = base;
+      const sourceX = base.x || 0, sourceY = base.y || 0;
+      const width = image.width || image.naturalWidth;
+      const height = image.height || image.naturalHeight;
+      const L = this.armLength / 100, W = this.armWidth / 100;
+
+      if (L === 1 && W === 1) {
+        return { ...base,
+          x: sourceX + position.x - start.x,
+          y: sourceY + position.y - start.y };
+      }
+
+      const dx = end.x - start.x, dy = end.y - start.y;
+      const length = Math.hypot(dx, dy);
+      if (!length) throw new Error("Cannot reshape a zero-length arm segment");
+      const ux = dx / length, uy = dy / length;
+      const vx = -uy, vy = ux;
+
+      const a = L * ux * ux + W * vx * vx;
+      const b = L * ux * uy + W * vx * vy;
+      const c = L * uy * ux + W * vy * vx;
+      const d = L * uy * uy + W * vy * vy;
+      const tx = position.x + a * (sourceX - start.x) + c * (sourceY - start.y);
+      const ty = position.y + b * (sourceX - start.x) + d * (sourceY - start.y);
+
+      const corners = [
+        [0, 0], [width, 0], [0, height], [width, height]
+      ].map(([x, y]) => [a * x + c * y + tx, b * x + d * y + ty]);
+      const left = Math.floor(Math.min(...corners.map(p => p[0]))) - 3;
+      const top = Math.floor(Math.min(...corners.map(p => p[1]))) - 3;
+      const right = Math.ceil(Math.max(...corners.map(p => p[0]))) + 3;
+      const bottom = Math.ceil(Math.max(...corners.map(p => p[1]))) + 3;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = right - left;
+      canvas.height = bottom - top;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not transform an arm segment");
+      ctx.imageSmoothingEnabled = true;
+      ctx.setTransform(a, b, c, d, tx - left, ty - top);
+      ctx.drawImage(image, 0, 0);
+      this.canvasesBuilt++;
+      return { filename, image: canvas, x: left, y: top };
     }
 
     // A row-based, smoothly interpolated horizontal mesh: one source image
@@ -374,18 +444,58 @@
         }
       }
 
-      // Preserve source pixels for arms and apply only a rigid translation.
-      for (const [filename, base] of this.baseLayers) {
-        const match = filename.match(/(?:UpperArm|LowerArm|hand|Hand)\((L|R)\)/);
-        if (match) {
-          output.set(filename, { ...base, x: (base.x || 0) + shoulderOffsets[match[1]] });
-        }
-      }
-
+      // Keep a continuous parent-child arm chain. Both upper and lower arm
+      // segments receive the SAME width/length factors. The wrist and hand
+      // move with the limb, but the hand artwork itself is never stretched.
       for (const side of ["L", "R"]) {
-        for (const id of ["shoulder", "elbow", "wrist"]) {
-          this.rig.config.pivots[id + side].x =
-            this.basePivots[id + side].x + shoulderOffsets[side];
+        const shoulder = this.basePivots["shoulder" + side];
+        const elbow = this.basePivots["elbow" + side];
+        const wrist = this.basePivots["wrist" + side];
+        const length = this.armLength / 100;
+        const shiftedShoulder = {
+          x: shoulder.x + shoulderOffsets[side],
+          y: shoulder.y
+        };
+        const movedElbow = {
+          x: shiftedShoulder.x + (elbow.x - shoulder.x) * length,
+          y: shiftedShoulder.y + (elbow.y - shoulder.y) * length
+        };
+        const movedWrist = {
+          x: shiftedShoulder.x + (wrist.x - shoulder.x) * length,
+          y: shiftedShoulder.y + (wrist.y - shoulder.y) * length
+        };
+
+        const filenames = [
+          "12-UpperArm(" + side + ").PNG",
+          "13-UpperArm(" + side + ").PNG",
+          "14-LowerArm(" + side + ").PNG",
+          "15-LowerArm(" + side + ").PNG"
+        ];
+        const upperName = side === "L" ? filenames[0] : filenames[1];
+        const lowerName = side === "L" ? filenames[2] : filenames[3];
+        for (const [filename, begin, end, destination] of [
+          [upperName, shoulder, elbow, shiftedShoulder],
+          [lowerName, elbow, wrist, movedElbow]
+        ]) {
+          const base = this.baseLayers.get(filename);
+          if (!base) throw new Error("Missing arm image: " + filename);
+          output.set(filename, this.transformArm(base, begin, end, destination));
+        }
+
+        const handName = side === "L" ? "16-hand(L).PNG" : "17-Hand(R).PNG";
+        const handBase = this.baseLayers.get(handName);
+        if (!handBase) throw new Error("Missing hand image: " + handName);
+        output.set(handName, { ...handBase,
+          x: (handBase.x || 0) + movedWrist.x - wrist.x,
+          y: (handBase.y || 0) + movedWrist.y - wrist.y
+        });
+        for (const [id, point] of [
+          ["shoulder", shiftedShoulder],
+          ["elbow", movedElbow],
+          ["wrist", movedWrist]
+        ]) {
+          this.rig.config.pivots[id + side].x = point.x;
+          this.rig.config.pivots[id + side].y = point.y;
         }
         for (const id of ["hip", "knee"]) {
           this.rig.config.pivots[id + side].x =
@@ -402,8 +512,9 @@
 
     reset() {
       return this.setShape({
-        head: 100, neck: 100,
-        upperTorso: 100, waist: 100, hips: 100,
+        head: 100, neck: 100, neckWidth: 100,
+        upperTorso: 100, armWidth: 100, armLength: 100,
+        waist: 100, hips: 100,
         thighs: 100, calves: 100
       });
     }
