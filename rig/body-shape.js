@@ -19,6 +19,12 @@
     const q = clamp((t - a) / (b - a), 0, 1);
     return q * q * (3 - 2 * q);
   };
+  // Quintic interpolation has zero first AND second derivatives at the
+  // endpoints: adjacent leg segments join without a visible curvature kink.
+  const smootherstep = (a, b, t) => {
+    const q = clamp((t - a) / (b - a), 0, 1);
+    return q * q * q * (q * (q * 6 - 15) + 10);
+  };
 
   const PARTS = Object.freeze({
     "01-Head.PNG": ["head", null],
@@ -95,16 +101,39 @@
         context.drawImage(source.image, 0, 0);
         const rgba = context.getImageData(0, 0, w, h).data;
 
-        // The per-row transparency contour gives a better deformation axis
-        // than one straight line through an anatomically curved leg.
+        // Legs are contiguous filled shapes. Ignore disconnected alpha
+        // specks: they formerly dragged the per-row deformation axis and
+        // produced sharp bumps when a leg was enlarged. Other part types
+        // retain their original alpha-scan behavior.
+        const kind = PARTS[layer.filename][0];
+        const isLeg = kind === "upper" || kind === "lower";
         let any = false;
         for (let row = 0; row < h; row++) {
           let left = w, right = -1;
           const start = row * w * 4;
-          for (let x = 0; x < w; x++) {
-            if (rgba[start + x * 4 + 3] > 12) {
-              if (x < left) left = x;
-              right = x;
+          if (isLeg) {
+            let runStart = -1, lastSolid = -1, bestLength = 0;
+            for (let x = 0; x <= w + 2; x++) {
+              const filled = x < w && rgba[start + x * 4 + 3] > 12;
+              if (filled) {
+                if (runStart === -1) runStart = x;
+                lastSolid = x;
+              } else if (runStart !== -1 && x - lastSolid > 2) {
+                const length = lastSolid - runStart + 1;
+                if (length > bestLength) {
+                  bestLength = length;
+                  left = runStart;
+                  right = lastSolid;
+                }
+                runStart = -1;
+              }
+            }
+          } else {
+            for (let x = 0; x < w; x++) {
+              if (rgba[start + x * 4 + 3] > 12) {
+                if (x < left) left = x;
+                right = x;
+              }
             }
           }
           if (right >= left) {
@@ -117,6 +146,25 @@
             };
           } else {
             source.rows[row] = null;
+          }
+        }
+        // A small spatial filter is applied to the *deformation offset*, not
+        // to the original pixels. Neutral 100% art stays pixel-identical.
+        if (isLeg) {
+          for (let row = 0; row < h; row++) {
+            const current = source.rows[row];
+            if (!current) continue;
+            let weightedLeft = 0, weightedRight = 0, weightSum = 0;
+            for (let offset = -10; offset <= 10; offset++) {
+              const neighbour = source.rows[row + offset];
+              if (!neighbour) continue;
+              const weight = 11 - Math.abs(offset);
+              weightedLeft += neighbour.left * weight;
+              weightedRight += neighbour.right * weight;
+              weightSum += weight;
+            }
+            current.smoothLeft = weightedLeft / weightSum;
+            current.smoothRight = weightedRight / weightSum;
           }
         }
         sample.width = sample.height = 0;
@@ -252,22 +300,31 @@
       const hip = this.basePivots["hip" + side].y;
       const knee = this.basePivots["knee" + side].y;
       if (kind === "upper") {
+        // One continuous thigh silhouette: hip → rounded full thigh → knee.
+        // The intermediate plateau inherits the original PNG's organic shape,
+        // without multiplying two independently shaped influence curves.
         const t = clamp((y - hip) / Math.max(1, knee - hip), 0, 1);
-        const toThigh = smoothstep(0.04, 0.32, t);
-        const toKnee = smoothstep(0.70, 0.90, t);
-        const upperMiddle = hipConnection + (thighScale - hipConnection) * toThigh;
-        return upperMiddle + (kneeConnection - upperMiddle) * toKnee;
+        if (t <= 0.24) {
+          return hipConnection +
+            (thighScale - hipConnection) * smootherstep(0, 0.24, t);
+        }
+        if (t <= 0.58) return thighScale;
+        return thighScale +
+          (kneeConnection - thighScale) * smootherstep(0.58, 1, t);
       }
 
-      // Keep the existing knee-coupling formula and protect the foot.
+      // One continuous calf silhouette: shared knee → calf belly → ankle.
+      // The old code ADDED knee and bulge offsets, producing two visible
+      // humps. A single interpolated thickness prevents those artifacts.
       const footBottom = source.y + source.h - 1;
       const ankle = knee + (footBottom - knee) * 0.84;
       const t = clamp((y - knee) / Math.max(1, ankle - knee), 0, 1);
-      const kneeWeight = 1 - smoothstep(0.10, 0.36, t);
-      const calfBulge = smoothstep(0.18, 0.43, t) *
-        (1 - smoothstep(0.52, 0.95, t));
-      return 1 + (kneeConnection - 1) * kneeWeight +
-        (calfScale - 1) * calfBulge;
+      if (t <= 0.30) {
+        return kneeConnection +
+          (calfScale - kneeConnection) * smootherstep(0, 0.30, t);
+      }
+      if (t <= 0.48) return calfScale;
+      return calfScale + (1 - calfScale) * smootherstep(0.48, 0.93, t);
     }
 
     // Change length without moving the physical neck/torso overlap.
@@ -578,47 +635,76 @@
       return { ...layer, image: canvas, y: originY };
     }
 
-    // A row-based, smoothly interpolated horizontal mesh: one source image
-    // row maps to a stretched/shrunk output row. Vertical coordinates do not
-    // change, so hip/knee pivots and animations stay in the same coordinate
-    // system. No new seams are introduced by resampling in the Y direction.
+    // Row-wise horizontal mesh with a smoothed *displacement field*.
+    // For legs, alpha specks are rejected and a 21-row weighted contour is
+    // used for scale offsets. The original painted edge itself remains
+    // untouched, so pixel outlines and shading are preserved at 100%.
+    // Both knee faces and the pelvis/upper-thigh seam use EXACT original
+    // row geometry to retain their shared connection widths.
     deform(source, kind, side, offsetX = 0) {
+      const isLeg = kind === "upper" || kind === "lower";
       const rows = source.rows;
       let minX = Infinity, maxX = -Infinity, changed = false;
-      const scales = new Float32Array(source.h);
+      const geometries = new Array(source.h);
+      const knee = isLeg ? this.basePivots["knee" + side].y : 0;
+
       for (let y = 0; y < source.h; y++) {
         const row = rows[y];
         if (!row) continue;
-        const scale = this.factor(kind, side, row.y, source);
-        scales[y] = scale;
-        if (Math.abs(scale - 1) > 0.000001) changed = true;
-        const a = row.axis + (row.left - row.axis) * scale;
-        const b = row.axis + (row.right - row.axis) * scale;
-        minX = Math.min(minX, a);
-        maxX = Math.max(maxX, b);
+        const factor = this.factor(kind, side, row.y, source);
+        if (Math.abs(factor - 1) > 0.000001) changed = true;
+        let left, width;
+        if (isLeg && row.right - row.left >= 2) {
+          // Smooth ONLY the additional width/centerline displacement.
+          // Near the knee and the visible pelvis seam (y≈1330), smoothly
+          // return to exact source bounds for the shared 40%/30% rules.
+          const distance = kind === "upper"
+            ? Math.min(Math.abs(row.y - knee), Math.abs(row.y - 1330))
+            : Math.abs(row.y - knee);
+          const blend = smootherstep(0, 18, distance);
+          const half = (row.right - row.left) / 2;
+          const smoothedHalf = (row.smoothRight - row.smoothLeft) / 2;
+          const effectiveHalf = half + (smoothedHalf - half) * blend;
+          const smoothedAxis = (row.smoothLeft + row.smoothRight) / 2;
+          const effectiveAxis = row.axis + (smoothedAxis - row.axis) * blend;
+          const centerShift = (1 - factor) * (effectiveAxis - row.axis);
+          const expandedLeft = row.left -
+            (factor - 1) * effectiveHalf + centerShift;
+          const expandedRight = row.right +
+            (factor - 1) * effectiveHalf + centerShift;
+          const actualWidth = row.right - row.left;
+          const actualScale = (expandedRight - expandedLeft) / actualWidth;
+          // Transform the FULL source row by the geometry of its contour,
+          // keeping source shading, original silhouette, and alpha intact.
+          left = expandedLeft + (source.x - row.left) * actualScale;
+          width = source.w * actualScale;
+        } else {
+          left = row.axis + (source.x - row.axis) * factor;
+          width = source.w * factor;
+        }
+        geometries[y] = { left, width };
+        minX = Math.min(minX, left);
+        maxX = Math.max(maxX, left + width);
       }
-      if (!changed) return { filename: source.filename,
-        image: source.image, x: source.x + offsetX, y: source.y };
+      if (!changed) {
+        return { filename: source.filename,
+          image: source.image, x: source.x + offsetX, y: source.y };
+      }
 
-      // Expand by 3 pixels to preserve antialiased silhouette edges.
       const originX = Math.floor(minX) - 3;
-      const destWidth = Math.ceil(maxX) - originX + 5;
       const target = document.createElement("canvas");
-      target.width = destWidth;
+      target.width = Math.max(1, Math.ceil(maxX) - originX + 3);
       target.height = source.h;
       const ctx = target.getContext("2d");
       if (!ctx) throw new Error("Could not create body-shape canvas");
       ctx.imageSmoothingEnabled = true;
-
       for (let rowY = 0; rowY < source.h; rowY++) {
-        const row = rows[rowY];
-        if (!row) continue;
-        const scale = scales[rowY];
-        const left = row.axis + (source.x - row.axis) * scale - originX;
+        const geometry = geometries[rowY];
+        if (!geometry) continue;
         ctx.drawImage(
           source.image,
           0, rowY, source.w, 1,
-          left, rowY, source.w * scale, 1
+          geometry.left - originX, rowY, geometry.width, 1
         );
       }
       this.canvasesBuilt++;
