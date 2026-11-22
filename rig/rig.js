@@ -163,8 +163,8 @@
           kneeCapsDrawn = true;
         }
         ctx.save();
-        const attached = Object.prototype.hasOwnProperty.call(this.config.parts, filename)
-          ? this.config.parts[filename] : null;
+        const isBodyPart = Object.prototype.hasOwnProperty.call(this.config.parts, filename);
+        const attached = isBodyPart ? this.config.parts[filename] : null;
         for (const id of this.ancestors(attached)) {
           const angle = this.angles[id];
           if (!angle) continue;
@@ -173,7 +173,7 @@
           ctx.rotate(angle * RAD);
           ctx.translate(-x, -y);
         }
-        ctx.drawImage(this.skinTone ? this.skinTone.getImage(image) : image, x, y);
+        ctx.drawImage(this.skinTone && isBodyPart ? this.skinTone.getImage(image) : image, x, y);
         ctx.restore();
       }
       ctx.restore();
