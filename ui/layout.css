@@ -604,3 +604,76 @@
   outline: 4px solid #7d5e87;
   outline-offset: 5px;
 }
+
+
+/* Eleven body sliders fit the full 1206×2622 Magic Room artboard without an
+ * inner scrollbar. The sidebar itself remains at its existing coordinates.
+ * The grid reserves one flexible row per slider and a final reset/status row. */
+.ui-scene[data-room="magic"][data-magic-tab="body"] .ui-magic-panel {
+  display: grid;
+  grid-template-rows: repeat(11, minmax(0, 1fr)) 50px 25px;
+  align-content: stretch;
+  overflow: hidden;
+  padding: 12px 18px 16px 22px;
+  gap: 1px;
+}
+.ui-scene[data-room="magic"] .ui-magic-row {
+  min-height: 0;
+  height: auto;
+  padding: 3px 0 6px;
+  gap: 5px;
+  justify-content: center;
+}
+.ui-scene[data-room="magic"] .ui-magic-title {
+  font-size: 36px;
+  line-height: 1.08;
+  letter-spacing: -.045em;
+}
+.ui-scene[data-room="magic"] .ui-magic-input-line {
+  grid-template-columns: 66px 42px minmax(0, 1fr) 42px;
+  column-gap: 5px;
+  min-height: 47px;
+}
+.ui-scene[data-room="magic"] .ui-magic-output {
+  font-size: 25px;
+}
+.ui-scene[data-room="magic"] .ui-magic-step {
+  width: 38px;
+  height: 38px;
+  border-width: 3px !important;
+  font-size: 32px !important;
+}
+.ui-scene[data-room="magic"] .ui-magic-slider {
+  height: 46px;
+}
+.ui-scene[data-room="magic"] .ui-magic-slider::-webkit-slider-runnable-track {
+  height: 14px;
+}
+.ui-scene[data-room="magic"] .ui-magic-slider::-webkit-slider-thumb {
+  height: 28px;
+  width: 28px;
+  margin-top: -10px;
+}
+.ui-scene[data-room="magic"] .ui-magic-slider::-moz-range-track {
+  height: 14px;
+}
+.ui-scene[data-room="magic"] .ui-magic-slider::-moz-range-thumb {
+  height: 24px;
+  width: 24px;
+}
+.ui-scene[data-room="magic"] .ui-magic-row:last-of-type {
+  margin-bottom: 0;
+}
+.ui-scene[data-room="magic"] .ui-magic-actions {
+  padding: 0;
+  align-items: center;
+}
+.ui-scene[data-room="magic"] .ui-magic-reset {
+  height: 47px;
+  font-size: 25px !important;
+}
+.ui-scene[data-room="magic"] .ui-magic-status {
+  min-height: 0;
+  font-size: 19px;
+  line-height: 1.2;
+}
