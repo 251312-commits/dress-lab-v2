@@ -1,0 +1,143 @@
+/* Working HSB picker, fitted into the existing 1206 x 2622 sidebar.
+   The outer ring selects hue; the rotated square selects saturation/value. */
+.ui-scene .ui-wheel {
+  border: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 90deg,
+    #ff0000 0deg,
+    #ff00ff 60deg,
+    #0000ff 120deg,
+    #00ffff 180deg,
+    #00ff00 240deg,
+    #ffff00 300deg,
+    #ff0000 360deg
+  );
+  cursor: crosshair;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  --picked-hue: #ff0000;
+  --picked-color: #000000;
+}
+.ui-scene .ui-wheel__inner {
+  position: absolute;
+  inset: 62px;
+  border: 0;
+  border-radius: 50%;
+  background: #414141;
+  pointer-events: none;
+}
+.ui-scene .ui-wheel__diamond {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 176px;
+  height: 176px;
+  border: 0;
+  border-radius: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background:
+    linear-gradient(to top, #000000, transparent),
+    linear-gradient(to right, #ffffff, var(--picked-hue));
+  pointer-events: none;
+}
+.ui-scene .ui-wheel__copy { display: none; }
+.ui-wheel__hue-marker,
+.ui-wheel__tone-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  border: 6px solid #d7d7dd;
+  border-radius: 50%;
+  background: var(--picked-hue);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 48%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 3;
+}
+.ui-wheel__tone-marker {
+  background: var(--picked-color);
+}
+.ui-wheel:focus-visible {
+  outline: 5px solid #776b77;
+  outline-offset: 6px;
+}
+.ui-scene .ui-hex {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding-left: 44px;
+  cursor: copy;
+  pointer-events: auto;
+  --picked-color: #000000;
+}
+.ui-scene .ui-hex::before {
+  content: "";
+  position: absolute;
+  width: 31px;
+  height: 31px;
+  left: 0;
+  top: 3px;
+  border: 2px solid #2b2b2b;
+  border-radius: 50%;
+  background: var(--picked-color);
+}
+.ui-scene .ui-hex:focus-visible {
+  outline: 4px solid #776b77;
+  outline-offset: 4px;
+}
+.ui-scene .ui-slider-row__value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ui-scene .ui-slider-step {
+  border: 0 !important;
+  border-radius: 50% !important;
+  color: #fff;
+  background: #111 !important;
+  font-size: 34px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+.ui-scene .ui-slider-step:active { background: #3a3a3a !important; }
+.ui-scene .ui-slider-input {
+  min-width: 0;
+  cursor: pointer;
+  touch-action: pan-x;
+  --slider-track: linear-gradient(to right, #000, #fff);
+}
+.ui-scene .ui-slider-input::-webkit-slider-runnable-track {
+  height: 16px;
+  border: 2px solid #292929;
+  border-radius: 20px;
+  background: var(--slider-track);
+}
+.ui-scene .ui-slider-input::-moz-range-track {
+  height: 12px;
+  border: 2px solid #292929;
+  border-radius: 20px;
+  background: var(--slider-track);
+}
+.ui-scene .ui-slider-input::-webkit-slider-thumb {
+  width: 34px;
+  height: 34px;
+  margin-top: -11px;
+  border: 3px solid #aeb0b4;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 22%);
+}
+.ui-scene .ui-slider-input::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #aeb0b4;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 22%);
+}

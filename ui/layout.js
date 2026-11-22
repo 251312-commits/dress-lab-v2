@@ -48,15 +48,15 @@
     ["dress", "드레스룸"]
   ];
   const channels = [
-    ["h", "색조", 0, 360, 0, 5],
-    ["s", "채도", 0, 100, 0, 5],
-    ["b", "밝기", 0, 100, 100, 5]
+    ["h", "색조", 0, 360, 0, 1],
+    ["s", "채도", 0, 100, 0, 1],
+    ["b", "밝기", 0, 100, 0, 1]
   ];
 
   const sliderMarkup = channels.map(([id, label, min, max, value, step]) => [
     '<div class="ui-slider-row" data-channel="', id, '">',
       '<output class="ui-slider-row__value" for="ui-range-', id, '" id="ui-value-', id, '">',
-        (id === "h" ? Math.round(value / 3.6) : value), '%',
+        value, (id === "h" ? "°" : "%"),
       '</output>',
       '<button type="button" class="ui-slider-step" data-adjust="-1" aria-label="', label, ' 감소">−</button>',
       '<input class="ui-slider-input" type="range" id="ui-range-', id, '" aria-label="', label, '" min="', min,
@@ -251,33 +251,6 @@
     }
   });
 
-  // Local HSB widget preview only. It does NOT recolor the doll PNGs.
-  function updateColorPreview() {
-    const h = Number(document.getElementById("ui-range-h").value);
-    const s = Number(document.getElementById("ui-range-s").value) / 100;
-    const v = Number(document.getElementById("ui-range-b").value) / 100;
-    const c = s * v;
-    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-    const m = v - c;
-    let rgb;
-    if (h < 60) rgb = [c, x, 0];
-    else if (h < 120) rgb = [x, c, 0];
-    else if (h < 180) rgb = [0, c, x];
-    else if (h < 240) rgb = [0, x, c];
-    else if (h < 300) rgb = [x, 0, c];
-    else rgb = [c, 0, x];
-    const hex = "#" + rgb.map(n => Math.round((n + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
-    document.getElementById("ui-hex").textContent = hex;
-
-    for (const [id] of channels) {
-      const value = Number(document.getElementById("ui-range-" + id).value);
-      document.getElementById("ui-value-" + id).textContent =
-        (id === "h" ? Math.round(value / 3.6) : value) + "%";
-    }
-  }
-
-  overlay.querySelectorAll(".ui-slider-input").forEach(input => {
-    input.addEventListener("input", updateColorPreview);
-  });
-  updateColorPreview();
+  // Interactive HSB handling lives in ui/color-wheel.js.
+  // The picker emits dresslab:color-change for future outfit renderers.
 })();
