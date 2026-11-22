@@ -141,3 +141,40 @@
   background: #fff;
   box-shadow: 0 1px 2px rgb(0 0 0 / 22%);
 }
+
+/* Magic Room / skin tone: same wheel controls, independent color state. */
+.ui-magic-skin-panel {
+  display: none;
+  position: absolute;
+  inset: 86px 4px 0 0;
+  padding: 39px 8px 28px;
+  background: #fff;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  pointer-events: auto;
+}
+.ui-scene[data-room="magic"][data-magic-tab="skin"] .ui-magic-skin-panel {
+  display: block;
+}
+.ui-skin-title {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin: 0 0 40px 20px;
+  color: #24201e;
+}
+.ui-skin-colors {
+  position: relative;
+  width: 494px;
+  height: 652px;
+}
+.ui-skin-colors .ui-wheel {
+  touch-action: none;
+}
+.ui-skin-note {
+  margin: 42px 18px 0;
+  font-size: 25px;
+  line-height: 1.5;
+  color: #716861;
+}

@@ -53,10 +53,44 @@
   ].join("");
   editor.appendChild(panel);
 
-  // These categories are visible in the sketch, but their editing engines
-  // have not been implemented. Do not misrepresent them as functional.
+  // The skin tab uses its own HSB picker. This selects a skin-color value;
+  // the actual PNG recoloring pipeline is intentionally left untouched.
+  const skinPanel = document.createElement("section");
+  skinPanel.className = "ui-magic-skin-panel";
+  skinPanel.setAttribute("aria-label", "마법룸 피부톤 색상 선택");
+  const skinChannels = [
+    ["h", "색조", 360, "0°"],
+    ["s", "채도", 100, "0%"],
+    ["b", "밝기", 100, "0%"]
+  ];
+  const skinSliders = skinChannels.map(([id, label, max, initial]) => [
+    '<div class="ui-slider-row" data-channel="', id, '">',
+      '<output class="ui-slider-row__value" for="skin-range-', id,
+        '" id="skin-value-', id, '">', initial, '</output>',
+      '<button type="button" class="ui-slider-step" data-adjust="-1" aria-label="피부톤 ', label, ' 감소">−</button>',
+      '<input class="ui-slider-input" type="range" id="skin-range-', id,
+        '" aria-label="피부톤 ', label, '" min="0" max="', max, '" step="1" value="0">',
+      '<button type="button" class="ui-slider-step" data-adjust="1" aria-label="피부톤 ', label, ' 증가">+</button>',
+    '</div>'
+  ].join("")).join("");
+  skinPanel.innerHTML = [
+    '<h2 class="ui-skin-title">피부톤</h2>',
+    '<div class="ui-skin-colors">',
+      '<div class="ui-wheel" aria-label="피부톤 색상환"></div>',
+      '<output class="ui-hex" aria-label="피부톤 색상 HEX 코드">#EBC4B0</output>',
+      '<div class="ui-sliders" aria-label="피부톤 HSB 슬라이더">',
+        skinSliders,
+      '</div>',
+    '</div>',
+    '<p class="ui-skin-note">선택한 피부톤은 색상 미리보기로 표시된다. 인형 피부에 적용하는 기능은 아직 연결되지 않았다.</p>'
+  ].join("");
+  editor.appendChild(skinPanel);
+  window.DressLabSkinColorWheel = window.DressLabColorPicker
+    ? window.DressLabColorPicker.mount(skinPanel.querySelector(".ui-skin-colors"), "skin", "#EBC4B0")
+    : null;
+
+  // Face controls are still a placeholder until the face editor exists.
   for (const [id, label, explanation] of [
-    ["skin", "피부톤", "피부톤 편집 기능은 아직 준비 중이야."],
     ["face", "얼굴", "얼굴 편집 기능은 아직 준비 중이야."]
   ]) {
     const placeholder = document.createElement("section");

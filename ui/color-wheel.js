@@ -5,15 +5,18 @@
 (() => {
   "use strict";
 
-  const wheel = document.querySelector(".ui-wheel");
-  const hexOutput = document.getElementById("ui-hex");
+  // Separate instances keep Dress Room clothing colors and Magic Room skin colors independent.
+  function mount(container, source = "dress", initialHex = "#000000") {
+    if (!container) return null;
+    const wheel = container.querySelector(".ui-wheel");
+  const hexOutput = container.querySelector(".ui-hex");
   const selectionStatus = document.getElementById("ui-selection-status");
   const ranges = {
-    h: document.getElementById("ui-range-h"),
-    s: document.getElementById("ui-range-s"),
-    b: document.getElementById("ui-range-b")
+    h: container.querySelector('.ui-slider-row[data-channel="h"] .ui-slider-input'),
+    s: container.querySelector('.ui-slider-row[data-channel="s"] .ui-slider-input'),
+    b: container.querySelector('.ui-slider-row[data-channel="b"] .ui-slider-input')
   };
-  if (!wheel || !hexOutput || !ranges.h || !ranges.s || !ranges.b) return;
+  if (!wheel || !hexOutput || !ranges.h || !ranges.s || !ranges.b) return null;
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const value = { h: 0, s: 0, b: 0 };
@@ -100,7 +103,7 @@
 
     for (const channel of Object.keys(ranges)) {
       ranges[channel].value = String(value[channel]);
-      const output = document.getElementById("ui-value-" + channel);
+      const output = container.querySelector('.ui-slider-row[data-channel="' + channel + '"] .ui-slider-row__value');
       if (output) output.textContent = value[channel] + (channel === "h" ? "°" : "%");
     }
 
@@ -124,8 +127,8 @@
     toneMarker.style.backgroundColor = hex;
 
     if (announce) {
-      window.dispatchEvent(new CustomEvent("dresslab:color-change", {
-        detail: { h: value.h, s: value.s, b: value.b, hex, rgb: rgb.slice(), source: "dress" }
+      window.dispatchEvent(new CustomEvent(source === "skin" ? "dresslab:skin-color-change" : "dresslab:color-change", {
+        detail: { h: value.h, s: value.s, b: value.b, hex, rgb: rgb.slice(), source }
       }));
     }
   }
@@ -247,11 +250,16 @@
     }
   });
 
-  window.DressLabColorWheel = {
+  const api = {
     getColor: () => ({ ...value, hex: toHex(hsvToRgb(value.h, value.s, value.b)) }),
     setColor,
     setHex
   };
-  // The supplied reference starts at #000000 (H 0°, S 0%, B 0%).
-  paint();
+  if (!setHex(initialHex)) paint();
+  return api;
+  }
+
+  // Backward compatible clothing-color interface, plus a reusable skin picker.
+  window.DressLabColorPicker = { mount };
+  window.DressLabColorWheel = mount(document.querySelector(".ui-colors"), "dress", "#000000");
 })();
