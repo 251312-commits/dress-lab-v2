@@ -1,4 +1,4 @@
-/* Dress Lab V2 — head/neck and five-body-part testing controls.
+/* Dress Lab V2 — eleven-body-shape testing controls.
  * Only displayed when the page is opened with ?body=1.
  * Limits are read directly from the same config as the deformation engine.
  */
@@ -57,6 +57,7 @@
       ["upperTorso", "상체 폭"],
       ["armWidth", "팔 두께"],
       ["armLength", "팔 길이"],
+      ["handSize", "손 크기"],
       ["waist", "허리 관절"],
       ["hips", "골반"],
       ["thighs", "허벅지"],
