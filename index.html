@@ -51,6 +51,7 @@
       display: block;
       width: 100%;
       height: 100%;
+      touch-action: none; /* drag the character without browser scrolling */
     }
     .ui-overlay {
       position: absolute;
@@ -99,6 +100,7 @@
 
   <script src="./rig/skin-tone.js?v=live-skin-png-20261122"></script>
   <script src="./rig/rig.js?v=live-skin-png-20261122"></script>
+  <script src="./rig/eyes.js?v=eyes-boing-gaze-20261124"></script>
   <script src="./rig/body-shape.js?v=leg-continuous-v11b-20261122"></script>
   <script src="./rig/body-shape-debug.js?v=leg-continuous-v11-20261122"></script>
   <script src="./rig/motion.js?v=motions-20261122b"></script>
@@ -277,10 +279,24 @@
             }
           }
 
+          // Eyes remain independent PNG layers and follow the Head rig,
+          // including head/neck changes created by the body-shape controller.
+          if (window.DressLabEyes) {
+            try {
+              const eyes = new window.DressLabEyes(rig, canvas);
+              eyes.bodyShape = bodyShape;
+              await eyes.load();
+              window.dressLabEyes = eyes;
+            } catch (eyeError) {
+              console.warn("눈 애니메이션 초기화 실패 · 몸체 렌더링은 계속:", eyeError);
+            }
+          }
+
           if (window.DressLabMotion) {
             const idleAllowed = new URLSearchParams(window.location.search).get("idle") !== "0";
             motion = new window.DressLabMotion(rig, { autoStart: idleAllowed });
             window.dressLabMotion = motion;
+            if (window.dressLabEyes) window.dressLabEyes.motion = motion;
           }
         } catch (rigError) {
           // Keep the original static doll functional if rig data is unavailable.
