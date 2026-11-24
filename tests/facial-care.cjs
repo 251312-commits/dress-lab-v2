@@ -18,7 +18,7 @@ const root = path.join(__dirname, '..');
 const toolIds = ['cleanser', 'towel', 'serum', 'cream', 'roller'];
 let server, browser, page;
 const qa = process.env.FACIAL_CARE_QA;
-const signature = state => JSON.parse(JSON.stringify({ products: state.products, dirt: state.dirt, hydration: state.hydration, massage: state.massage, overallProgress: state.overallProgress }));
+const signature = state => JSON.parse(JSON.stringify({ products: state.products, dirt: state.dirt, hydration: state.hydration, massage: state.massage, overallProgress: state.overallProgress, towelWet: state.towelWet }));
 const state = () => page.evaluate(() => window.DressLabFacialCare.getState());
 
 async function startServer() {
@@ -241,7 +241,26 @@ async function snapshot(name) {
   assert.ok(afterMixed.products.cream.film.some(value => value > 0));
   assert.ok(afterMixed.products.serum.work > beforeMixed.products.serum.work);
   assert.equal(afterMixed.selectedTool, 'towel');
-  const partial = signature(afterMixed);
+  // A selected dry towel still needs water. The basin click is the explicit
+  // alternative to dragging the towel through its water surface.
+  assert.equal(afterMixed.towelWet, false);
+  const beforeDry = signature(afterMixed);
+  await dragTool('towel', [{ x: 560, y: 1060 }, { x: 560, y: 620 },
+    { x: 255, y: 620 }, { x: 280, y: 620 }, { x: 255, y: 620 }]);
+  assert.deepEqual(signature(await state()), beforeDry, 'Dry towel must not wipe or increase progress');
+  const basin = page.getByRole('button', { name: '물수건 적시기', exact: true });
+  assert.equal(await basin.isVisible(), true);
+  await basin.click();
+  assert.equal((await state()).towelWet, true);
+  const beforeWetAmount = (await state()).products.cream.dots.reduce((n, dot) => n + dot.amount, 0) +
+    (await state()).products.cream.film.reduce((n, value) => n + value, 0);
+  await dragTool('towel', [{ x: 255, y: 620 }, { x: 280, y: 620 }, { x: 255, y: 620 }]);
+  const wetState = await state();
+  const afterWetAmount = wetState.products.cream.dots.reduce((n, dot) => n + dot.amount, 0) +
+    wetState.products.cream.film.reduce((n, value) => n + value, 0);
+  assert.ok(afterWetAmount < beforeWetAmount, 'Wet towel must remove real residue');
+  assert.equal(wetState.towelWet, true);
+  const partial = signature(wetState);
   await snapshot('facial-mixed-mobile');
 
   await page.locator('.ui-room-button[data-room="dress"]').click();
@@ -274,6 +293,7 @@ async function snapshot(name) {
   const reset = await state();
   assert.ok(Object.values(reset.products).every(product => product.dots.length === 0 && product.film.every(value => value === 0)));
   assert.equal(reset.overallProgress, 0);
+  assert.equal(reset.towelWet, false);
   assert.deepEqual(await page.evaluate(() => ({ shape: window.dressLabBodyShape.getState(),
     skin: window.dressLabSkinTone.getColor(), outfit: window.dressLabWardrobe.equipped,
     selected: window.DressLabCareRoom.selectedTool })), appearance);
@@ -286,7 +306,7 @@ async function snapshot(name) {
   assert.equal(await page.locator('[data-shelf-direction="-1"]').isVisible(), false);
   assert.deepEqual(errors, [], 'There must be no uncaught browser errors');
   console.log('PASS: five real assets; touch/keyboard shelf; vertical tool pickup and unlimited application;');
-  console.log('one-dose bare rubbing and mixed materials; no tool cursor for hand; work-only overall bar;');
+  console.log('bare mixed rubbing, dry/wet basin flow, no hand-tool cursor; residue-aware overall bar;');
   console.log('no automatic selection/per-tool progress; transforms, persistence, isolated reset; no page errors.');
 })().catch(async error => {
   console.error(error);

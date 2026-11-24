@@ -193,6 +193,56 @@
   white-space: nowrap;
 }
 
+/* Water is below the chin and above the shelf, opposite the reset button. */
+.ui-care-basin {
+  position: absolute;
+  left: 65px;
+  top: 1660px;
+  width: 410px;
+  height: 280px;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  pointer-events: auto;
+}
+.ui-care-basin[hidden] { display: none !important; }
+.ui-care-basin img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.ui-care-basin__water {
+  position: absolute;
+  left: 10.5%;
+  top: 25.5%;
+  width: 78%;
+  height: 34%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(ellipse, rgba(208, 238, 249, .58), rgba(193, 229, 244, .18) 60%, transparent 76%);
+  filter: drop-shadow(0 0 18px rgba(165, 210, 229, .48));
+}
+.ui-care-basin[data-wet="true"] .ui-care-basin__water {
+  background: transparent;
+  border: 3px solid rgba(117, 173, 194, .28);
+  filter: none;
+  transform: scale(.86);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ui-care-basin[data-wet="true"] .ui-care-basin__water {
+    animation: ui-basin-ripple 1.8s ease-out 2;
+  }
+}
+@keyframes ui-basin-ripple {
+  from { transform: scale(.65); opacity: .65; }
+  to { transform: scale(.98); opacity: .12; }
+}
+
 /* Exactly three slots are visible. Overflow stays inside the shelf so swiping
    tools cannot move the room or expose the doll below the white backing. */
 .ui-care-shelf {
@@ -382,6 +432,7 @@
 .ui-care-tab:focus-visible,
 .ui-care-tool:focus-visible,
 .ui-care-talk:focus-visible,
+.ui-care-basin:focus-visible,
 .ui-care-shelf-arrow:focus-visible {
   outline: 7px solid #426e8f;
   outline-offset: 6px;

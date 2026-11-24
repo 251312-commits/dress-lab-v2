@@ -41,6 +41,10 @@
       '<div class="ui-care-dialog__text" id="ui-care-dialog-text" aria-live="polite">대화창</div>',
     '</section>',
     '<button class="ui-care-talk" id="ui-care-talk" type="button">대화</button>',
+    '<button class="ui-care-basin" type="button" aria-label="물수건 적시기" hidden>',
+      '<img src="./assets/care/facial/basin.png" alt="" draggable="false">',
+      '<span class="ui-care-basin__water" aria-hidden="true"></span>',
+    '</button>',
     '<div class="ui-care-shelf" aria-label="케어 도구 선반">',
       '<div class="ui-care-shelf__line" aria-hidden="true"></div>',
       '<div class="ui-care-tools" id="ui-care-tools" role="group" aria-label="케어 도구"></div>',
@@ -57,6 +61,7 @@
   const dialogBubble = careRoom.querySelector(".ui-care-dialog");
   const dialog = careRoom.querySelector("#ui-care-dialog-text");
   const talk = careRoom.querySelector("#ui-care-talk");
+  const basin = careRoom.querySelector(".ui-care-basin");
   const shelf = careRoom.querySelector(".ui-care-shelf");
   const viewport = careRoom.querySelector(".ui-care-tools");
   const previous = careRoom.querySelector('[data-shelf-direction="-1"]');
@@ -109,11 +114,41 @@
       button.dataset.recommended = String(selectedTab === "facial" && id === facialState?.recommendedTool);
       button.setAttribute("aria-label", tool.label + (selectedTab === "facial" ? "" : " · 준비 중"));
     });
+    syncBasin();
+  }
+  function syncBasin() {
+    basin.hidden = scene.dataset.room !== "care" || selectedTab !== "facial" ||
+      selectionByTab.get("facial") !== "towel";
+    basin.dataset.wet = String(Boolean(facialState?.towelWet));
+  }
+  function wetTowel() {
+    if (basin.hidden || scene.dataset.room !== "care" || selectedTab !== "facial" ||
+        selectionByTab.get("facial") !== "towel" || facialState?.towelWet) return false;
+    window.dispatchEvent(new CustomEvent("dresslab:facial-towel-wet"));
+    return true;
+  }
+  function wetTowelAlongDrag(gesture, x, y) {
+    if (basin.hidden || gesture.tool !== "towel") return false;
+    const rect = basin.getBoundingClientRect();
+    if (!(rect.width > 0 && rect.height > 0)) return false;
+    const cx = rect.left + rect.width * .495, cy = rect.top + rect.height * .425;
+    const rx = rect.width * .39, ry = rect.height * .17;
+    const ax = ((gesture.waterX ?? gesture.x) - cx) / rx;
+    const ay = ((gesture.waterY ?? gesture.y) - cy) / ry;
+    const dx = (x - cx) / rx - ax, dy = (y - cy) / ry - ay;
+    const length = dx * dx + dy * dy;
+    const t = length ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / length)) : 0;
+    // Check the segment too: a fast captured stroke can cross the water
+    // between pointer events without ever targeting the basin DOM node.
+    if ((ax + dx * t) ** 2 + (ay + dy * t) ** 2 <= 1) wetTowel();
+    gesture.waterX = x;
+    gesture.waterY = y;
+    return ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
   }
   function syncOverall() {
     const value = Number.isFinite(facialState?.overallProgress)
       ? Math.max(0, Math.min(1, facialState.overallProgress)) : 0;
-    const percent = Math.round(value * 100);
+    const percent = value >= 1 ? 100 : Math.min(99, Math.floor(value * 100 + 1e-8));
     overall.style.setProperty("--facial-progress", value);
     overall.setAttribute("aria-valuenow", String(percent));
     overall.setAttribute("aria-valuetext", percent + "%");
@@ -129,6 +164,7 @@
     const message = isFacial ? "" : dialogueOpen ? "대화 기능 준비 중" : "대화창";
     if (dialog.textContent !== message) dialog.textContent = message;
     syncOverall();
+    syncBasin();
   }
   function renderTools() {
     const tools = currentTools();
@@ -220,13 +256,23 @@
         event.target.closest(".ui-care-tool")) event.preventDefault();
   });
   viewport.addEventListener("dragstart", event => event.preventDefault());
+  basin.addEventListener("dragstart", event => event.preventDefault());
+  basin.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    if (!event.repeat) { finishGesture(null, true); wetTowel(); }
+  });
+  basin.addEventListener("keyup", event => {
+    if (event.key === "Enter" || event.key === " ") event.preventDefault();
+  });
   careRoom.addEventListener("pointerdown", () => { suppressClickUntil = 0; }, true);
 
   function emitToolDrag(gesture, phase, event) {
+    const clientX = Number.isFinite(event?.clientX) ? event.clientX : gesture.lastX;
+    const clientY = Number.isFinite(event?.clientY) ? event.clientY : gesture.lastY;
+    const overBasin = phase !== "cancel" && wetTowelAlongDrag(gesture, clientX, clientY);
     window.dispatchEvent(new CustomEvent("dresslab:facial-tool-drag", {
-      detail: { phase, tool: gesture.tool, pointerId: gesture.id,
-        clientX: Number.isFinite(event?.clientX) ? event.clientX : gesture.lastX,
-        clientY: Number.isFinite(event?.clientY) ? event.clientY : gesture.lastY }
+      detail: { phase, tool: gesture.tool, pointerId: gesture.id, clientX, clientY, overBasin }
     }));
   }
   function capturePointer(pointerId) {
@@ -255,7 +301,11 @@
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
     if (!drag.axis) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < (drag.facial ? 8 : 6)) return;
-      drag.axis = !drag.facial || Math.abs(dx) >= Math.abs(dy) ? "pan" : drag.tool ? "tool" : "ignore";
+      // The basin sits diagonally above the towel. Treat a deliberate upward
+      // diagonal as pickup, while a mostly horizontal swipe remains a pan.
+      const upwardPickup = drag.facial && drag.tool && dy <= -6 && Math.abs(dy) >= Math.abs(dx) * .55;
+      drag.axis = upwardPickup ? "tool" : !drag.facial || Math.abs(dx) >= Math.abs(dy)
+        ? "pan" : drag.tool ? "tool" : "ignore";
       if (drag.axis === "pan") {
         viewport.classList.add("is-dragging");
         capturePointer(event.pointerId);
@@ -330,6 +380,11 @@
       setCareTool(selectedTab !== "facial" && selectionByTab.get(selectedTab) === id ? null : id);
       return;
     }
+    if (event.target.closest(".ui-care-basin")) {
+      finishGesture(null, true);
+      wetTowel();
+      return;
+    }
     if (event.target.closest("#ui-care-talk")) {
       if (selectedTab === "facial") {
         finishGesture(null, true);
@@ -351,6 +406,7 @@
   });
   window.addEventListener("dresslab:room-change", () => {
     finishGesture(null, true);
+    syncBasin();
     requestAnimationFrame(updateShelfControls);
   });
   window.addEventListener("resize", () => {

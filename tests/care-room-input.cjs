@@ -44,7 +44,7 @@ function fixture(initial = { selectedTool: 'cleanser', overallProgress: 0 }) {
     }
     closest(selector) {
       const matches = { '.ui-care-tool': 'tool', '.ui-care-tab': 'tab', '#ui-care-talk': 'talk',
-        '[data-shelf-direction]': 'arrow' };
+        '[data-shelf-direction]': 'arrow', '.ui-care-basin': 'basin' };
       for (let node = this; node; node = node.parentElement) if (node.kind === matches[selector]) return node;
       return null;
     }
@@ -80,7 +80,10 @@ function fixture(initial = { selectedTool: 'cleanser', overallProgress: 0 }) {
     get scrollLeft() { return Math.max(0, Math.min(this.scrollWidth - this.clientWidth, this._scrollLeft)); }
     set scrollLeft(value) { this._scrollLeft = Math.max(0, Math.min(this.scrollWidth - this.clientWidth, value)); }
     scrollTo(options) { this.scrollLeft = options.left; scrollCalls.push(options); this.dispatchEvent(new Event('scroll', { bubbles: false })); }
-    getBoundingClientRect() { return { left: 28.16, top: 623.04, width: 329.6, height: 115.2 }; }
+    getBoundingClientRect() {
+      return this.kind === 'basin' ? { left: 20.8, top: 531.2, width: 131.2, height: 89.6 }
+        : { left: 28.16, top: 623.04, width: 329.6, height: 115.2 };
+    }
     setPointerCapture(id) { captures.set(id, this); }
     hasPointerCapture(id) { return captures.get(id) === this; }
     releasePointerCapture(id) { captures.delete(id); }
@@ -91,7 +94,7 @@ function fixture(initial = { selectedTool: 'cleanser', overallProgress: 0 }) {
   careRoom = new Node('care'); viewport = new Node('viewport');
   const selectors = { '.ui-facial-overall': 'overall', '.ui-facial-overall__value': 'value',
     '.ui-care-dialog': 'dialog', '#ui-care-dialog-text': 'text', '#ui-care-talk': 'talk',
-    '.ui-care-shelf': 'shelf', '.ui-care-tools': 'viewport',
+    '.ui-care-shelf': 'shelf', '.ui-care-tools': 'viewport', '.ui-care-basin': 'basin',
     '[data-shelf-direction="-1"]': 'arrow', '[data-shelf-direction="1"]': 'arrow', '.ui-care-shelf-pages': 'pages' };
   for (const [selector, kind] of Object.entries(selectors)) {
     nodes[selector] = kind === 'viewport' ? viewport : new Node(kind);
@@ -114,7 +117,7 @@ function fixture(initial = { selectedTool: 'cleanser', overallProgress: 0 }) {
     { pointerId: 1, pointerType, button: 0, isPrimary: true, clientX: x, clientY: y, ...extra });
   const events = type => emitted.filter(event => event.type === type).map(event => event.detail);
   const dragEvents = () => events('dresslab:facial-tool-drag');
-  return { api, window, document, scene, careRoom, viewport, nodes, captures, scrollCalls, tool, fire, pointer, events, dragEvents };
+  return { api, window, document, scene, careRoom, viewport, nodes, captures, scrollCalls, emitted, tool, fire, pointer, events, dragEvents };
 }
 
 for (const type of ['mouse', 'touch', 'pen']) {
@@ -211,7 +214,8 @@ for (const [reason, cancel] of Object.entries(cancellations)) {
   assert.doesNotMatch(app.viewport.innerHTML, /ui-care-tool__(?:progress|done)|data-complete|aria-valuenow/);
   for (const button of app.viewport.querySelectorAll('.ui-care-tool')) assert.doesNotMatch(button.getAttribute('aria-label'), /%|완료/);
   app.viewport.scrollLeft = 343; app.scrollCalls.length = 0;
-  for (const [progress, expected] of [[-1, 0], [0.425, 43], [1.4, 100], [NaN, 0], [null, 0], [undefined, 0]]) {
+  for (const [progress, expected] of [[-1, 0], [0.425, 42], [0.29, 29], [0.995, 99],
+    [1 - Number.EPSILON, 99], [1, 100], [1.4, 100], [NaN, 0], [null, 0], [undefined, 0]]) {
     app.fire(app.window, 'dresslab:facial-state', { detail: {
       overallProgress: progress, selectedTool: 'cleanser', recommendedTool: 'cream' } });
     assert.equal(overall.getAttribute('aria-valuenow'), String(expected));
@@ -226,4 +230,120 @@ for (const [reason, cancel] of Object.entries(cancellations)) {
   app.api.setTab('facial'); assert.equal(overall.hidden, false);
   assert.equal(app.api.selectedTool, 'roller');
 }
-console.log('Care-room input tests passed: mouse/touch/pen axes, capture/cancel, click suppression, keyboard, overall progress and tool artwork.');
+
+function towelFixture() {
+  const app = fixture({ selectedTool: 'towel', towelWet: false, overallProgress: 0 });
+  const basin = app.nodes['.ui-care-basin'], rect = basin.getBoundingClientRect();
+  const water = { x: rect.left + rect.width * .495, y: rect.top + rect.height * .425 };
+  // The engine owns wetness; mimic its state acknowledgement, not its logic.
+  app.window.addEventListener('dresslab:facial-towel-wet', () => app.fire(app.window,
+    'dresslab:facial-state', { detail: { selectedTool: 'towel', towelWet: true, overallProgress: 0 } }));
+  const phases = () => app.emitted.filter(event =>
+    ['dresslab:facial-tool-drag', 'dresslab:facial-towel-wet'].includes(event.type))
+    .map(event => event.type === 'dresslab:facial-towel-wet' ? 'wet' : event.detail.phase);
+  return { ...app, basin, water, phases };
+}
+
+{
+  const app = fixture(), basin = app.nodes['.ui-care-basin'];
+  assert.equal(basin.hidden, true);
+  app.fire(app.window, 'dresslab:facial-state', { detail: { selectedTool: 'towel', recommendedTool: 'towel', towelWet: false } });
+  assert.equal(app.api.selectedTool, 'cleanser');
+  assert.equal(basin.hidden, true, 'a recommendation must not select towel or reveal its basin');
+  app.api.setTool('towel', { reveal: false }); assert.equal(basin.hidden, false);
+  app.api.setTab('hair'); assert.equal(basin.hidden, true);
+  app.api.setTab('facial'); assert.equal(basin.hidden, false);
+  app.scene.dataset.room = 'dress'; app.fire(app.window, 'dresslab:room-change'); assert.equal(basin.hidden, true);
+  app.scene.dataset.room = 'care'; app.fire(app.window, 'dresslab:room-change'); assert.equal(basin.hidden, false);
+  app.api.setTool('serum', { reveal: false }); assert.equal(basin.hidden, true);
+  app.fire(basin, 'click', { detail: 0 });
+  assert.equal(app.events('dresslab:facial-towel-wet').length, 0, 'hidden basin cannot wet or select towel');
+  assert.equal(app.api.selectedTool, 'serum');
+}
+
+for (const type of ['mouse', 'touch', 'pen']) {
+  const app = towelFixture(), towel = app.tool('towel');
+  app.pointer('pointerdown', towel, 100, 700, type);
+  app.pointer('pointermove', towel, 102, 680, type);
+  app.pointer('pointermove', towel, app.water.x, app.water.y, type);
+  assert.deepEqual(app.phases(), ['start', 'wet', 'move'], type + ' wets before the captured move');
+  assert.equal(app.dragEvents().at(-1).overBasin, true);
+  assert.equal(app.basin.dataset.wet, 'true');
+  app.pointer('pointermove', towel, app.water.x, 450, type);
+  assert.equal(app.dragEvents().at(-1).overBasin, false);
+  app.pointer('pointerup', towel, app.water.x, 450, type);
+  assert.equal(app.events('dresslab:facial-towel-wet').length, 1, 'wet towel remains wet');
+  assert.equal(app.api.selectedTool, 'towel');
+}
+
+for (const type of ['mouse', 'touch', 'pen']) {
+  const app = towelFixture(), towel = app.tool('towel');
+  // Actual artboard locations: towel near (603,2070), water near (268,1779).
+  // A direct path is more horizontal than vertical, but unmistakably upward.
+  app.pointer('pointerdown', towel, 603 * .32, 2070 * .32, type);
+  app.pointer('pointermove', towel, app.water.x, app.water.y, type);
+  assert.deepEqual(app.phases(), ['wet', 'start'], type + ' direct diagonal to basin picks up and wets towel');
+  assert.equal(app.dragEvents()[0].overBasin, true);
+  assert.equal(app.viewport.scrollLeft, 0, 'direct basin pickup must not slide the shelf');
+  app.pointer('pointerup', towel, app.water.x, app.water.y, type);
+  assert.deepEqual(app.phases(), ['wet', 'start', 'end']);
+
+  const swipe = towelFixture(), swipeTowel = swipe.tool('towel');
+  swipe.pointer('pointerdown', swipeTowel, 250, 700, type);
+  swipe.pointer('pointermove', swipeTowel, 180, 680, type);
+  assert.ok(swipe.viewport.scrollLeft > 200, 'mostly horizontal swipe tolerates upward hand noise');
+  swipe.pointer('pointermove', swipeTowel, swipe.water.x, swipe.water.y, type);
+  swipe.pointer('pointerup', swipeTowel, swipe.water.x, swipe.water.y, type);
+  assert.deepEqual(swipe.phases(), [], 'a locked pan never turns into diagonal tool pickup');
+}
+
+{
+  const app = towelFixture(), towel = app.tool('towel');
+  app.pointer('pointerdown', towel, 100, 700);
+  app.pointer('pointermove', towel, 102, 680);
+  app.pointer('pointerup', towel, app.water.x, app.water.y);
+  assert.deepEqual(app.phases(), ['start', 'wet', 'end'], 'a basin drop wets before tool end');
+  assert.equal(app.dragEvents().at(-1).overBasin, true);
+  const fast = towelFixture(), fastTowel = fast.tool('towel');
+  fast.pointer('pointerdown', fastTowel, fast.water.x, 700);
+  fast.pointer('pointermove', fastTowel, fast.water.x, 680);
+  fast.pointer('pointermove', fastTowel, fast.water.x, 500);
+  assert.deepEqual(fast.phases(), ['start', 'wet', 'move'], 'fast strokes crossing water must also wet');
+  assert.equal(fast.dragEvents().at(-1).overBasin, false, 'overBasin describes the current endpoint');
+  const cancelled = towelFixture(), cancelledTowel = cancelled.tool('towel');
+  cancelled.pointer('pointerdown', cancelledTowel, 100, 700);
+  cancelled.pointer('pointermove', cancelledTowel, 102, 680);
+  cancelled.pointer('pointercancel', cancelledTowel, cancelled.water.x, cancelled.water.y);
+  assert.deepEqual(cancelled.phases(), ['start', 'cancel'], 'cancelling over water must never wet');
+  assert.equal(cancelled.dragEvents().at(-1).overBasin, false);
+  assert.equal(cancelled.basin.dataset.wet, 'false');
+  const pan = towelFixture(), panTowel = pan.tool('towel');
+  pan.pointer('pointerdown', panTowel, 250, 700);
+  pan.pointer('pointermove', panTowel, 180, 696);
+  pan.pointer('pointermove', panTowel, pan.water.x, pan.water.y);
+  pan.pointer('pointerup', panTowel, pan.water.x, pan.water.y);
+  assert.equal(pan.events('dresslab:facial-towel-wet').length, 0, 'a shelf swipe across the basin is not towel use');
+}
+
+{
+  const app = towelFixture();
+  app.fire(app.basin, 'click', { detail: 0 });
+  assert.equal(app.events('dresslab:facial-towel-wet').length, 1);
+  assert.equal(app.basin.dataset.wet, 'true');
+  app.fire(app.basin, 'click', { detail: 0 });
+  assert.equal(app.events('dresslab:facial-towel-wet').length, 1, 'wetness needs no repeated chore');
+  for (const key of ['Enter', ' ']) {
+    app.fire(app.window, 'dresslab:facial-state', { detail: { towelWet: false } });
+    const before = app.events('dresslab:facial-towel-wet').length;
+    assert.ok(app.fire(app.basin, 'keydown', { key, repeat: false }).defaultPrevented);
+    app.fire(app.basin, 'keydown', { key, repeat: true });
+    assert.ok(app.fire(app.basin, 'keyup', { key }).defaultPrevented);
+    assert.equal(app.events('dresslab:facial-towel-wet').length, before + 1);
+    assert.equal(app.api.selectedTool, 'towel');
+  }
+  app.fire(app.window, 'dresslab:facial-state', { detail: { towelWet: false, overallProgress: 0 } });
+  assert.equal(app.basin.dataset.wet, 'false', 'reset state restores dry-water guidance');
+  assert.equal(app.basin.hidden, false);
+  assert.ok(app.careRoom.innerHTML.includes('./assets/care/facial/basin.png'));
+}
+console.log('Care-room input tests passed: gesture axes/cancellation, keyboard, honest overall percentages, and basin visibility/wetting order.');

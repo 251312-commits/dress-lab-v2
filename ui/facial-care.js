@@ -6,11 +6,13 @@
   "use strict";
   const canvas = document.getElementById("character");
   if (!canvas) return;
-  const STORAGE_KEY = "dresslab-v2:facial-care:v3";
-  const PREVIOUS_STORAGE_KEY = "dresslab-v2:facial-care:v2";
+  const STORAGE_KEY = "dresslab-v2:facial-care:v4";
+  const PREVIOUS_STORAGE_KEYS = ["dresslab-v2:facial-care:v3", "dresslab-v2:facial-care:v2"];
   const TOOLS = ["cleanser", "towel", "serum", "cream", "roller"];
   const PRODUCTS = ["cleanser", "serum", "cream"];
   const WORK_TARGETS = { cleanser: 2.5, towel: 2, serum: 2.5, cream: 2.5, roller: 3 };
+  // The finish check and renderer share the same visibility thresholds.
+  const VISIBLE = { dot: 0.003, film: 0.0005, dirt: 0.005 };
   const FACE = { x: 329, y: 719, rx: 190, ry: 200 };
   const EYES = [{ x: 237, y: 800 }, { x: 422, y: 800 }];
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
@@ -20,6 +22,12 @@
   const isFace = (x, y) => Number.isFinite(x) && Number.isFinite(y) &&
     inEllipse(x, y, FACE.x, FACE.y, FACE.rx, FACE.ry) &&
     !EYES.some(eye => inEllipse(x, y, eye.x, eye.y, 70, 55));
+  // A cloth is wider than its pointer. Its centre may pass an eye or the face
+  // outline while its edge still wipes valid skin; eye pixels are never drawn.
+  const isTowelContact = (x, y) => Number.isFinite(x) && Number.isFinite(y) &&
+    inEllipse(x, y, FACE.x, FACE.y, FACE.rx + 85, FACE.ry + 85);
+  const brushWeight = (distance, inner, outer) =>
+    clamp((outer - distance) / (outer - inner), 0, 1);
   const CELLS = [];
   for (let y = 547; y <= 903; y += 28) {
     for (let x = 157; x <= 517; x += 28) {
@@ -30,6 +38,7 @@
   const blankProducts = () => Object.fromEntries(PRODUCTS.map(id =>
     [id, { dots: [], film: blankField(), work: 0, absorbed: 0 }]));
   const materialAmount = product => sum(product.film) + sum(product.dots.map(dot => dot.amount));
+  const INITIAL_DIRT = CELLS.filter((_, index) => index % 11 === 3).length * 0.7;
   const validField = (field, max = 1) => Array.isArray(field) && field.length === CELLS.length &&
     field.every(value => Number.isFinite(value) && value >= 0 && value <= max);
   function neighbors(point, radius) {
@@ -82,6 +91,7 @@
       window.addEventListener("dresslab:facial-reset", () => this.reset());
       window.addEventListener("dresslab:facial-tool-drag", event => this.toolDrag(event.detail));
       window.addEventListener("dresslab:facial-tool-key", event => this.toolKey(event.detail?.tool));
+      window.addEventListener("dresslab:facial-towel-wet", () => this.wetTowel());
     }
 
     clearMaterials() {
@@ -93,6 +103,7 @@
       this.lastUsed = null;
       this.rollerWork = 0;
       this.careWork = Object.fromEntries(TOOLS.map(id => [id, 0]));
+      this.towelWet = false;
     }
 
     bind(rig, bodyShape) {
@@ -107,8 +118,8 @@
     restore() {
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ||
-          localStorage.getItem(PREVIOUS_STORAGE_KEY));
-        if (![2, 3].includes(saved?.version) || !saved.products || !validField(saved.dirt) ||
+          PREVIOUS_STORAGE_KEYS.map(key => localStorage.getItem(key)).find(Boolean));
+        if (![2, 3, 4].includes(saved?.version) || !saved.products || !validField(saved.dirt) ||
             !validField(saved.hydration) || !validField(saved.massage)) return;
         for (const id of PRODUCTS) {
           const product = saved.products[id];
@@ -118,10 +129,11 @@
           if (!product.dots.every(dot => dot && isFace(dot.x, dot.y) &&
               Number.isFinite(dot.amount) && dot.amount >= 0)) return;
           if (!Number.isFinite(materialAmount(product))) return;
-          if (saved.version === 3 && (!Number.isFinite(product.absorbed) || product.absorbed < 0)) return;
+          if (saved.version >= 3 && (!Number.isFinite(product.absorbed) || product.absorbed < 0)) return;
         }
-        if (saved.version === 3 && (!saved.careWork || !TOOLS.every(id =>
+        if (saved.version >= 3 && (!saved.careWork || !TOOLS.every(id =>
           Number.isFinite(saved.careWork[id]) && saved.careWork[id] >= 0 && saved.careWork[id] <= 120))) return;
+        if (saved.version === 4 && typeof saved.towelWet !== "boolean") return;
         for (const id of PRODUCTS) {
           const product = saved.products[id];
           this.products[id] = { dots: product.dots.map(dot => ({ x: dot.x, y: dot.y, amount: dot.amount })),
@@ -136,46 +148,89 @@
         this.lastUsed = TOOLS.includes(saved.lastUsed) ? saved.lastUsed : null;
         this.rollerWork = Number.isFinite(saved.rollerWork) ? clamp(saved.rollerWork, 0, 120) : 0;
         this.selectedTool = TOOLS.includes(saved.selectedTool) ? saved.selectedTool : "cleanser";
-        if (saved.version === 3) {
+        if (saved.version >= 3) {
           this.careWork = Object.fromEntries(TOOLS.map(id => [id, saved.careWork[id]]));
         } else {
           // Preserve v2 materials and user selection; the removed three-dose
           // phase is not restored. Existing treatment contributes to the bar.
           PRODUCTS.forEach(id => { this.careWork[id] = this.products[id].work; });
-          const initialDirt = CELLS.filter((_, index) => index % 11 === 3).length * 0.7;
-          this.careWork.towel = clamp(1 - sum(this.dirt) / initialDirt, 0, 1) * WORK_TARGETS.towel;
+          this.careWork.towel = clamp(1 - sum(this.dirt) / INITIAL_DIRT, 0, 1) * WORK_TARGETS.towel;
           this.careWork.roller = this.rollerWork;
         }
+        this.towelWet = saved.version === 4 ? saved.towelWet : this.careWork.towel > 0;
       } catch (_) { /* Corrupt/blocked storage must not prevent care. */ }
     }
 
     save() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3,
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 4,
           selectedTool: this.selectedTool, lastUsed: this.lastUsed, rollerWork: this.rollerWork,
           products: this.products, paintOrder: this.paintOrder, dirt: this.dirt,
-          hydration: this.hydration, massage: this.massage, careWork: this.careWork }));
+          hydration: this.hydration, massage: this.massage, careWork: this.careWork, towelWet: this.towelWet }));
       } catch (_) { /* Play remains available for this session. */ }
     }
 
     recommend() {
       const id = this.lastUsed;
       if (!id) return "cleanser";
-      if (this.careWork[id] < WORK_TARGETS[id]) return id;
-      return TOOLS.find(tool => this.careWork[tool] < WORK_TARGETS[tool]) || null;
+      const credits = this.treatmentCredits();
+      if (TOOLS.every(tool => credits[tool] >= 1)) {
+        const cleanser = this.products.cleanser;
+        if (this.dirt.some(value => value > VISIBLE.dirt) ||
+            cleanser.dots.some(dot => dot.amount > VISIBLE.dot) ||
+            cleanser.film.some(value => value > VISIBLE.film)) return "towel";
+        return null; // Remaining serum/cream needs a hand, not another dose.
+      }
+      if (credits[id] < 1) return id;
+      return TOOLS.find(tool => credits[tool] < 1) || null;
+    }
+
+    surfaceState() {
+      const dirt = sum(this.dirt.filter(value => value > VISIBLE.dirt));
+      let material = 0;
+      for (const id of PRODUCTS) {
+        const product = this.products[id];
+        material += sum(product.dots.filter(dot => dot.amount > VISIBLE.dot).map(dot => dot.amount));
+        material += sum(product.film.filter(value => value > VISIBLE.film));
+        const carry = this.stroke?.carries[id] || 0;
+        if (carry > VISIBLE.film) material += carry;
+      }
+      const clear = dirt === 0 && material === 0;
+      return { dirt, material, clear,
+        cleanliness: clear ? 1 : clamp(1 - dirt / INITIAL_DIRT, 0, 1) / (1 + material * 2) };
+    }
+
+    treatmentCredits(surface = this.surfaceState()) {
+      return Object.fromEntries(TOOLS.map(id => {
+        let credit = this.careWork[id] / WORK_TARGETS[id];
+        // An absorbed dose earns its treatment credit even if it became clear
+        // before an arbitrary rubbing timer. No need to apply more to finish.
+        if (id === "serum" || id === "cream") credit = Math.max(credit, this.products[id].absorbed / 0.95);
+        if (id === "towel" && surface.dirt === 0 && this.careWork.towel > 0) credit = 1;
+        return [id, clamp(credit, 0, 1)];
+      }));
     }
 
     overallProgress() {
-      // Only actual spreading, wiping and massage contribute. Selecting or
-      // repeatedly depositing a bottle cannot fill the overall care bar.
-      return sum(TOOLS.map(id => clamp(this.careWork[id] / WORK_TARGETS[id], 0, 1))) / TOOLS.length;
+      const surface = this.surfaceState();
+      const treatment = sum(Object.values(this.treatmentCredits(surface))) / TOOLS.length;
+      const progress = treatment * 0.9 + surface.cleanliness * 0.1;
+      return surface.clear ? progress : Math.min(0.99, progress);
+    }
+
+    wetTowel() {
+      if (!this.active || this.selectedTool !== "towel") return;
+      this.towelWet = true;
+      if (this.cursor) this.cursor.dataset.wet = "true";
+      this.save();
+      this.publish();
     }
 
     // Detailed copies are for save/debug/tests, not percentages or UI badges.
     getState() {
       return { active: this.active, ready: Boolean(this.rig), selectedTool: this.selectedTool,
         recommendedTool: this.recommend(), lastUsed: this.lastUsed,
-        overallProgress: this.overallProgress(), careWork: { ...this.careWork },
+        overallProgress: this.overallProgress(), careWork: { ...this.careWork }, towelWet: this.towelWet,
         paintOrder: this.paintOrder.slice(),
         products: Object.fromEntries(PRODUCTS.map(id => [id, {
           dots: this.products[id].dots.map(dot => ({ ...dot })),
@@ -186,7 +241,7 @@
     publish() {
       window.dispatchEvent(new CustomEvent("dresslab:facial-state", { detail: {
         active: this.active, ready: Boolean(this.rig), selectedTool: this.selectedTool,
-        recommendedTool: this.recommend(), overallProgress: this.overallProgress()
+        recommendedTool: this.recommend(), overallProgress: this.overallProgress(), towelWet: this.towelWet
       } }));
     }
 
@@ -201,7 +256,7 @@
         if (TOOLS.includes(chosen)) this.selectedTool = chosen;
         canvas.tabIndex = 0;
         canvas.setAttribute("role", "button");
-        canvas.setAttribute("aria-label", "페이셜 케어 얼굴. 선반의 도구를 얼굴로 끌어 도포하고, 얼굴을 직접 문질러 펴 바른다. 도포 횟수와 도구 순서는 자유롭다. 도구에 초점을 맞춘 Enter 또는 스페이스는 도구 사용, 얼굴에서 같은 키는 문지르기이다.");
+        canvas.setAttribute("aria-label", "페이셜 케어 얼굴. 선반의 도구를 얼굴로 끌어 도포하고, 얼굴을 직접 문질러 펴 바른다. 수건은 대야의 물에 적신 뒤 얼굴을 닦는다. 도포 횟수와 도구 순서는 자유롭다. 도구에 초점을 맞춘 Enter 또는 스페이스는 도구 사용, 얼굴에서 같은 키는 문지르기이다.");
       } else {
         canvas.removeAttribute("tabindex");
         canvas.setAttribute("role", "img");
@@ -315,7 +370,11 @@
       stroke.clientY = event.clientY;
       stroke.time = now;
       if (stroke.kind === "tool") this.moveCursor(event, stroke.tool);
-      if (!point || !previous || !isFace(point.x, point.y)) {
+      const towel = stroke.kind === "tool" && stroke.tool === "towel";
+      const accepts = towel ? isTowelContact : isFace;
+      // A captured cloth can cross the whole face between input events and
+      // finish beyond its outline. Sample that path before judging contact.
+      if (event.overBasin || !point || !previous || (!towel && !accepts(point.x, point.y))) {
         stroke.onFace = false;
         return;
       }
@@ -340,7 +399,7 @@
       for (let i = 1; i <= samples; i++) {
         const sample = { x: previous.x + (point.x - previous.x) * i / samples,
           y: previous.y + (point.y - previous.y) * i / samples };
-        if (isFace(sample.x, sample.y)) this.workAt(stroke, sample, work / samples);
+        if (accepts(sample.x, sample.y)) this.workAt(stroke, sample, work / samples);
       }
       stroke.point = point;
       this.publish();
@@ -371,14 +430,16 @@
       const rect = document.getElementById("artboard").getBoundingClientRect();
       const src = "./assets/care/facial/" + (tool === "roller" ? "roller-v2" : tool) + ".png";
       if (this.cursor.getAttribute("src") !== src) this.cursor.src = src;
+      this.cursor.dataset.tool = tool;
+      this.cursor.dataset.wet = String(tool === "towel" && this.towelWet);
       this.cursor.style.left = (event.clientX - rect.left) + "px";
       this.cursor.style.top = (event.clientY - rect.top) + "px";
       this.cursor.hidden = false;
     }
 
-    putFilm(product, point, amount) {
+    putFilm(product, point, amount, radius = 43) {
       if (!(amount > 0) || !point) return;
-      const nearby = neighbors(point, 43), total = sum(nearby.map(cell => cell.weight));
+      const nearby = neighbors(point, radius), total = sum(nearby.map(cell => cell.weight));
       if (!total) return;
       nearby.forEach(cell => { product.film[cell.index] += amount * cell.weight / total; });
     }
@@ -386,9 +447,44 @@
     flushCarry(stroke) {
       for (const id of PRODUCTS) {
         const carry = stroke.carries[id] || 0;
-        if (carry > 0) this.putFilm(this.products[id], stroke.point, carry);
+        if (carry > 0) this.putFilm(this.products[id], stroke.point, carry, id === "cleanser" ? 43 : 60);
         stroke.carries[id] = 0;
       }
+    }
+
+    recordAbsorption(product, point, amount) {
+      if (!(amount > 0)) return;
+      product.absorbed += amount;
+      const nearby = neighbors(point, 60), total = sum(nearby.map(cell => cell.weight));
+      if (!total) return;
+      nearby.forEach(cell => {
+        this.hydration[cell.index] = clamp(this.hydration[cell.index] + amount * 2.2 * cell.weight / total, 0, 1);
+      });
+    }
+
+    absorbLocal(id, stroke, point, work) {
+      if (id === "cleanser") return 0;
+      const product = this.products[id], rate = id === "serum" ? 3.6 : 2.8;
+      let absorbed = 0;
+      const carry = stroke.carries[id] || 0;
+      let remaining = carry * Math.exp(-work * rate);
+      if (remaining <= VISIBLE.film) remaining = 0;
+      absorbed += carry - remaining;
+      stroke.carries[id] = remaining;
+      // Absorption follows a broad fingertip footprint, including the softly
+      // spread fringe. Work fades the existing film instead of painting a fresh
+      // opaque tint every time the hand picks it up and puts it down again.
+      CELLS.forEach((cell, index) => {
+        const weight = brushWeight(Math.hypot(cell.x - point.x, cell.y - point.y), 50, 82);
+        if (!weight || product.film[index] <= 0) return;
+        const before = product.film[index];
+        let after = before * Math.exp(-work * rate * weight);
+        if (after <= VISIBLE.film) after = 0;
+        product.film[index] = after;
+        absorbed += before - after;
+      });
+      this.recordAbsorption(product, point, absorbed);
+      return absorbed;
     }
 
     spread(id, stroke, point, work) {
@@ -399,11 +495,17 @@
         .filter(item => item.weight > 0 && item.dot.amount > 0);
       const dotWeight = sum(dots.map(item => item.weight));
       dots.forEach(({ dot, weight }) => {
-        const take = Math.min(dot.amount, work * 1.4 * weight / dotWeight);
+        const rate = id === "cleanser" ? 1.4 : 1.4 + dot.amount * 3.2;
+        const take = Math.min(dot.amount, work * rate * weight / dotWeight);
         dot.amount -= take;
         carry += take;
+        if (id !== "cleanser" && dot.amount <= VISIBLE.dot) {
+          carry += dot.amount;
+          dot.amount = 0;
+        }
       });
-      const nearby = neighbors(point, 43), totalWeight = sum(nearby.map(cell => cell.weight));
+      const radius = id === "cleanser" ? 43 : 60;
+      const nearby = neighbors(point, radius), totalWeight = sum(nearby.map(cell => cell.weight));
       let contact = dots.length > 0 || carry > 0;
       nearby.forEach(cell => {
         const amount = product.film[cell.index];
@@ -412,15 +514,11 @@
         const take = Math.min(amount, work * 0.65 * cell.weight / totalWeight);
         product.film[cell.index] -= take;
         carry += take;
-        const rate = id === "serum" ? 0.48 : id === "cream" ? 0.22 : 0;
-        const absorbed = Math.min(product.film[cell.index], work * rate * cell.weight / totalWeight);
-        product.film[cell.index] -= absorbed;
-        product.absorbed += absorbed;
-        this.hydration[cell.index] = clamp(this.hydration[cell.index] + absorbed * 2.2, 0, 1);
       });
-      const release = Math.min(carry, work * 1.2);
-      this.putFilm(product, point, release);
+      const release = Math.min(carry, work * (id === "cleanser" ? 1.2 : 2.2));
+      this.putFilm(product, point, release, radius);
       stroke.carries[id] = carry - release;
+      if (this.absorbLocal(id, stroke, point, work) > 0) contact = true;
       if (contact) {
         product.work = Math.min(120, product.work + work);
         this.careWork[id] = Math.min(120, this.careWork[id] + work);
@@ -430,28 +528,35 @@
     }
 
     wipe(point, work) {
-      const nearby = neighbors(point, 55);
+      if (!this.towelWet) return;
+      const nearby = CELLS.map((cell, index) => ({ index,
+        weight: brushWeight(Math.hypot(cell.x - point.x, cell.y - point.y), 55, 85) }))
+        .filter(cell => cell.weight > 0);
+      const clean = (amount, weight, threshold) => {
+        if (!weight || !(amount > 0)) return amount;
+        // A finite cleanup term removes the last trace, rather than leaving
+        // exponential residue that never quite reaches zero.
+        const remaining = Math.max(0, amount * Math.exp(-work * 12 * weight) - work * 0.12 * weight);
+        return remaining <= threshold ? 0 : remaining;
+      };
       let removed = 0;
       for (const id of PRODUCTS) {
         const product = this.products[id];
         product.dots.forEach(dot => {
-          const weight = Math.max(0, 1 - Math.hypot(dot.x - point.x, dot.y - point.y) / 55);
+          const weight = brushWeight(Math.hypot(dot.x - point.x, dot.y - point.y), 55, 85);
           const before = dot.amount;
-          dot.amount *= Math.exp(-work * 4.2 * weight);
-          if (dot.amount < 0.001) dot.amount = 0;
+          dot.amount = clean(dot.amount, weight, VISIBLE.dot);
           removed += before - dot.amount;
         });
         nearby.forEach(cell => {
           const before = product.film[cell.index];
-          product.film[cell.index] *= Math.exp(-work * 4.8 * cell.weight);
-          if (product.film[cell.index] < 0.0001) product.film[cell.index] = 0;
+          product.film[cell.index] = clean(before, cell.weight, VISIBLE.film);
           removed += before - product.film[cell.index];
         });
       }
       nearby.forEach(cell => {
         const before = this.dirt[cell.index];
-        this.dirt[cell.index] *= Math.exp(-work * 3.9 * cell.weight);
-        if (this.dirt[cell.index] < 0.001) this.dirt[cell.index] = 0;
+        this.dirt[cell.index] = clean(before, cell.weight, VISIBLE.dirt);
         removed += before - this.dirt[cell.index];
       });
       if (removed > 0.000000001) this.careWork.towel = Math.min(120, this.careWork.towel + work);
@@ -462,14 +567,8 @@
       const nearby = neighbors(point, 45);
       nearby.forEach(cell => {
         this.massage[cell.index] = clamp(this.massage[cell.index] + work * 0.48 * cell.weight, 0, 1);
-        for (const id of ["serum", "cream"]) {
-          const product = this.products[id];
-          const absorbed = Math.min(product.film[cell.index], work * 0.45 * cell.weight);
-          product.film[cell.index] -= absorbed;
-          product.absorbed += absorbed;
-          this.hydration[cell.index] = clamp(this.hydration[cell.index] + absorbed, 0, 1);
-        }
       });
+      for (const id of ["serum", "cream"]) this.absorbLocal(id, { carries: {} }, point, work * 0.7);
       this.rollerWork = Math.min(120, this.rollerWork + work);
       this.careWork.roller = Math.min(120, this.careWork.roller + work);
       this.lastUsed = "roller";
@@ -493,7 +592,7 @@
       const stroke = { kind, tool, point, carries: {} };
       for (let i = 0; i < 4; i++) {
         const sample = { x: point.x + (destination.x - point.x) * i / 3, y: point.y };
-        if (isFace(sample.x, sample.y)) {
+        if ((tool === "towel" ? isTowelContact : isFace)(sample.x, sample.y)) {
           this.workAt(stroke, sample, 0.04);
           stroke.point = sample;
         }
@@ -512,10 +611,10 @@
       if (PRODUCTS.includes(id)) {
         this.deposit(id, spots[this.keyboardIndex++ % spots.length]);
       } else {
-        const remaining = id === "towel" ? CELLS.filter((_, index) => this.dirt[index] > 0.001 ||
-          PRODUCTS.some(key => this.products[key].film[index] > 0.001)) : [];
+        const remaining = id === "towel" ? CELLS.filter((_, index) => this.dirt[index] > VISIBLE.dirt ||
+          PRODUCTS.some(key => this.products[key].film[index] > VISIBLE.film)) : [];
         const dots = id === "towel" ? PRODUCTS.flatMap(key =>
-          this.products[key].dots.filter(dot => dot.amount > 0.001)) : [];
+          this.products[key].dots.filter(dot => dot.amount > VISIBLE.dot)) : [];
         const targets = dots.concat(remaining);
         const points = targets.length ? targets : spots;
         this.keyboardPass("tool", id, points[this.keyboardIndex % points.length]);
@@ -525,8 +624,8 @@
     keyDown(event) {
       if (!this.active || this.pointerId !== null || event.repeat || !["Enter", " "].includes(event.key)) return;
       event.preventDefault();
-      const dots = PRODUCTS.flatMap(id => this.products[id].dots.filter(dot => dot.amount > 0.001));
-      const film = CELLS.filter((_, index) => PRODUCTS.some(id => this.products[id].film[index] > 0.001));
+      const dots = PRODUCTS.flatMap(id => this.products[id].dots.filter(dot => dot.amount > VISIBLE.dot));
+      const film = CELLS.filter((_, index) => PRODUCTS.some(id => this.products[id].film[index] > VISIBLE.film));
       const points = dots.length ? dots : film.length ? film : this.keyboardSpots();
       this.keyboardPass("hand", null, points[this.keyboardIndex % points.length]);
     }
@@ -547,7 +646,7 @@
     }
 
     drawDot(ctx, id, dot) {
-      if (dot.amount < 0.003) return;
+      if (dot.amount <= VISIBLE.dot) return;
       const radius = (id === "serum" ? 11 : 16) * Math.pow(Math.min(dot.amount, 3), 0.36);
       ctx.save();
       ctx.translate(dot.x, dot.y);
@@ -568,7 +667,7 @@
     }
 
     draw(ctx) {
-      if (!this.active && sum(this.hydration) + sum(this.massage) <= 0) return;
+      if (!this.active) return;
       ctx.save();
       const shape = this.bodyShape;
       if (shape?.headNeckAnchors) {
@@ -578,34 +677,39 @@
       }
       this.clipFace(ctx);
       CELLS.forEach((cell, index) => {
-        if (this.active && this.dirt[index] > 0.01) {
+        if (this.dirt[index] > VISIBLE.dirt) {
           ctx.fillStyle = "rgba(166,127,119," + this.dirt[index] * .3 + ")";
           ctx.beginPath(); ctx.ellipse(cell.x + 3, cell.y - 2, 9, 6, .3, 0, Math.PI * 2); ctx.fill();
         }
-        const sheen = this.hydration[index] * .21 + this.massage[index] * .07;
-        if (sheen > .001) {
-          const glow = ctx.createRadialGradient(cell.x, cell.y, 0, cell.x, cell.y, 26);
-          glow.addColorStop(0, "rgba(255,255,255," + sheen + ")");
-          glow.addColorStop(1, "rgba(255,255,255,0)");
-          ctx.fillStyle = glow;
-          ctx.beginPath(); ctx.arc(cell.x, cell.y, 26, 0, Math.PI * 2); ctx.fill();
-        }
+        // Hydration and massage are care state, not permanent white paint.
+        // Once a product is absorbed, the original selected skin tone shows.
       });
       if (this.active) {
         for (const id of this.paintOrder) {
           const product = this.products[id];
           product.film.forEach((amount, index) => {
-            if (amount < .0001) return;
+            if (amount <= VISIBLE.film) return;
             const cell = CELLS[index];
             ctx.save();
-            ctx.globalAlpha = clamp(amount * (id === "cleanser" ? 12 : 7), 0, .85);
-            ctx.fillStyle = id === "cleanser" ? "#f5fffc" : id === "serum" ? "#e8bfce" : "#fff2df";
             ctx.beginPath();
             if (id === "cleanser") {
+              ctx.globalAlpha = clamp(amount * 12, 0, .85);
+              ctx.fillStyle = "#f5fffc";
               ctx.arc(cell.x - 7, cell.y, 16, 0, Math.PI * 2);
               ctx.arc(cell.x + 7, cell.y + 3, 15, 0, Math.PI * 2);
               ctx.arc(cell.x, cell.y - 8, 17, 0, Math.PI * 2);
-            } else ctx.ellipse(cell.x, cell.y, 25, 18, -.25, 0, Math.PI * 2);
+            } else {
+              // A thin film spreads softly and becomes transparent as its
+              // local material is absorbed. It never stains the base image.
+              const radius = 32 + 12 * (1 - clamp(amount / 0.15, 0, 1));
+              const alpha = clamp(amount * 6, 0, id === "serum" ? 0.5 : 0.65);
+              const color = id === "serum" ? "235,194,208" : "255,246,233";
+              const film = ctx.createRadialGradient(cell.x, cell.y, 0, cell.x, cell.y, radius);
+              film.addColorStop(0, "rgba(" + color + "," + alpha + ")");
+              film.addColorStop(1, "rgba(" + color + ",0)");
+              ctx.fillStyle = film;
+              ctx.arc(cell.x, cell.y, radius, 0, Math.PI * 2);
+            }
             ctx.fill();
             ctx.restore();
           });

@@ -13,6 +13,9 @@
   filter: drop-shadow(0 3px 2px #57465924);
 }
 .ui-facial-cursor[hidden] { display: none; }
+.ui-facial-cursor[data-tool="towel"][data-wet="true"] {
+  filter: drop-shadow(0 3px 2px #57465924) drop-shadow(0 4px 5px #9fd8e69c);
+}
 #character[data-facial-active="true"] { cursor: crosshair; }
 #character[data-facial-active="true"]:focus-visible {
   outline: 3px solid #80a39b;

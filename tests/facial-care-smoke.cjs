@@ -9,7 +9,7 @@ const source = fs.readFileSync(path.join(root, 'ui/facial-care.js'), 'utf8');
 const rigSource = fs.readFileSync(path.join(root, 'rig/rig.js'), 'utf8');
 const config = JSON.parse(fs.readFileSync(path.join(root, 'rig/rig.json'), 'utf8'));
 const tools = ['cleanser', 'towel', 'serum', 'cream', 'roller'];
-const STORE = 'dresslab-v2:facial-care:v3';
+const STORE = 'dresslab-v2:facial-care:v4';
 
 class Target {
   constructor() { this.handlers = new Map(); this.attributes = {}; this.dataset = {}; this.style = {}; }
@@ -29,7 +29,7 @@ class Target {
 }
 const plain = value => JSON.parse(JSON.stringify(value));
 const signature = state => plain({ products: state.products, dirt: state.dirt,
-  hydration: state.hydration, massage: state.massage, overallProgress: state.overallProgress });
+  hydration: state.hydration, massage: state.massage, overallProgress: state.overallProgress, towelWet: state.towelWet });
 const sum = values => values.reduce((total, value) => total + value, 0);
 const material = product => sum(product.dots.map(dot => dot.amount)) + sum(product.film);
 const noStages = state => ['stage', 'stageIndex', 'stages', 'progress', 'completed']
@@ -146,12 +146,13 @@ function setup({ storage = new Map(), blockedStorage = false, rect, shape: chang
   function toolKey(tool) {
     advance(); window.dispatchEvent({ type: 'dresslab:facial-tool-key', detail: { tool } });
   }
+  function wet() { window.dispatchEvent({ type: 'dresslab:facial-towel-wet' }); }
   function flush() {
     const callbacks = [...rafs.values()]; rafs.clear();
     callbacks.forEach(fn => fn(now));
   }
   return { window, document, canvas, care, rig, shape, storage, key, pointer, client,
-    advance, tap, stroke, toolEvent, toolTap, toolStroke, toolKey,
+    advance, tap, stroke, toolEvent, toolTap, toolStroke, toolKey, wet,
     published, completion, selections, flush, rafs, paints: () => paints };
 }
 
@@ -163,6 +164,9 @@ const point = { x: 260, y: 620 };
 const shortPath = [point, { x: 280, y: 620 }, point, { x: 280, y: 620 }];
 noStages(h.care.getState());
 assert.equal(h.care.getState().overallProgress, 0);
+assert.equal(h.care.getState().towelWet, false);
+h.wet();
+assert.equal(h.care.getState().towelWet, false, 'Only a selected towel can be wetted');
 for (const id of tools) {
   h.window.DressLabCareRoom.setTool(id);
   h.tap(point);
@@ -182,12 +186,18 @@ assert.equal(h.selections.length, userSelections);
 h.care.reset();
 h.window.DressLabCareRoom.setTool('towel');
 const dusty = sum(h.care.getState().dirt);
+const dryState = signature(h.care.getState());
+h.toolStroke('towel', shortPath);
+assert.deepEqual(signature(h.care.getState()), dryState, 'Dry towel must not remove dirt or earn work');
+h.wet();
+assert.equal(h.care.getState().towelWet, true);
 h.toolStroke('towel', [point, { x: 290, y: 630 }, { x: 325, y: 640 }, { x: 370, y: 660 }]);
 assert.ok(sum(h.care.getState().dirt) < dusty, 'Dragged towel must clean independently');
 assert.ok(h.care.getState().overallProgress > 0);
 h.care.reset();
 assert.deepEqual(signature(h.care.getState()), empty);
 assert.equal(h.care.getState().selectedTool, 'towel', 'Reset must preserve selected tool');
+assert.equal(h.care.getState().towelWet, false, 'Reset must dry the towel');
 
 // Unlimited application: neither repeated placement nor a single long drag
 // stops at three doses. Coalescing nearby dots is allowed; total mass must grow.
@@ -367,8 +377,8 @@ assert.deepEqual(signature(h.care.getState()), cancelledTool);
 h.window.DressLabCareRoom.setTab('facial');
 assert.equal(h.care.getState().selectedTool, 'serum');
 
-// V3 snapshots and saved progress are independent copies. Migrate valid V2
-// material state without restoring the obsolete three-dose workflow.
+// V4 snapshots and saves retain the actual material, work and towel wetness.
+// Prior V3/V2 material remains without restoring a misleading full bar.
 const beforeSnapshotMutation = signature(h.care.getState());
 const snapshot = h.care.getState();
 snapshot.products.serum.dots[0].amount = 999;
@@ -378,22 +388,28 @@ const restored = setup({ storage: h.storage });
 assert.deepEqual(signature(restored.care.getState()), beforeSnapshotMutation);
 assert.equal(restored.completion.length, 0);
 restored.published.forEach(noStages);
-const savedV3 = JSON.parse(h.storage.get(STORE));
-const savedV2 = { ...savedV3, version: 2, rollerWork: 0 };
-delete savedV2.careWork;
-savedV2.products = Object.fromEntries(Object.entries(savedV2.products).map(([id, product]) =>
-  [id, { dots: product.dots, film: product.film, work: product.work }]));
-const migrationStore = new Map([['dresslab-v2:facial-care:v2', JSON.stringify(savedV2)]]);
-const migrated = setup({ storage: migrationStore });
-for (const id of ['cleanser', 'serum', 'cream']) {
-  const product = migrated.care.getState().products[id];
-  assert.deepEqual(plain({ dots: product.dots, film: product.film, work: product.work }), savedV2.products[id]);
-  assert.equal(product.absorbed, 0, 'V2 has no prior absorption counter');
+const savedV4 = JSON.parse(h.storage.get(STORE));
+for (const version of [2, 3]) {
+  const prior = { ...savedV4, version, rollerWork: 0 };
+  delete prior.towelWet;
+  if (version === 2) {
+    delete prior.careWork;
+    prior.products = Object.fromEntries(Object.entries(prior.products).map(([id, product]) =>
+      [id, { dots: product.dots, film: product.film, work: product.work }]));
+  }
+  const migrationStore = new Map([['dresslab-v2:facial-care:v' + version, JSON.stringify(prior)]]);
+  const migrated = setup({ storage: migrationStore });
+  for (const id of ['cleanser', 'serum', 'cream']) {
+    const product = migrated.care.getState().products[id];
+    assert.deepEqual(plain({ dots: product.dots, film: product.film, work: product.work }), {
+      dots: prior.products[id].dots, film: prior.products[id].film, work: prior.products[id].work });
+    if (version === 2) assert.equal(product.absorbed, 0);
+  }
+  migrated.window.DressLabCareRoom.setTool('cleanser');
+  for (let i = 0; i < 5; i++) migrated.toolKey('cleanser');
+  assert.ok(material(migrated.care.getState().products.cleanser) > 3);
+  assert.equal(JSON.parse(migrationStore.get(STORE)).version, 4);
 }
-migrated.window.DressLabCareRoom.setTool('cleanser');
-for (let i = 0; i < 5; i++) migrated.toolKey('cleanser');
-assert.ok(material(migrated.care.getState().products.cleanser) > 3);
-assert.equal(JSON.parse(migrationStore.get(STORE)).version, 3);
 
 // Tool keys apply/use the chosen tool; canvas keys only rub what exists.
 const accessible = setup();
@@ -412,26 +428,77 @@ assert.equal(accessible.selections.length, userSelections);
 // Wiping a mixed face removes nearby material gradually, and the overall bar
 // reflects real care instead of deposits. A full bar never locks free play.
 restored.window.DressLabCareRoom.setTool('towel');
+restored.wet();
+assert.equal(restored.care.getState().towelWet, true);
 const beforeWipe = material(restored.care.getState().products.serum);
 restored.toolStroke('towel', [point, { x: 275, y: 620 }, { x: 290, y: 625 }]);
 const afterWipe = material(restored.care.getState().products.serum);
 assert.ok(afterWipe < beforeWipe && afterWipe > 0);
+// Old full-work saves with visible products/dirt must never show 100%.
+const dirtyLegacy = JSON.parse(h.storage.get(STORE));
+dirtyLegacy.version = 3;
+delete dirtyLegacy.towelWet;
+dirtyLegacy.careWork = Object.fromEntries(tools.map(id => [id, 120]));
+const legacyFull = setup({ storage: new Map([['dresslab-v2:facial-care:v3', JSON.stringify(dirtyLegacy)]]) });
+assert.ok(legacyFull.care.getState().overallProgress < 1, 'Legacy full work cannot bypass visible residue');
+assert.equal(legacyFull.care.getState().towelWet, true, 'Prior towel work migrates to a wet towel');
+
 const fullSave = JSON.parse(h.storage.get(STORE));
 fullSave.careWork = Object.fromEntries(tools.map(id => [id, 120]));
+fullSave.dirt.fill(0);
 fullSave.hydration.fill(1);
+fullSave.massage.fill(1);
+for (const product of Object.values(fullSave.products)) { product.dots = []; product.film.fill(0); }
 const full = setup({ storage: new Map([[STORE, JSON.stringify(fullSave)]]) });
-assert.equal(full.care.getState().overallProgress, 1);
-const atFull = material(full.care.getState().products.cream);
+assert.equal(full.care.getState().overallProgress, 1, 'Full work and clear skin reach 100%');
+const atFull = material(full.care.getState().products.cream) + full.care.getState().products.cream.absorbed;
 full.toolTap('cream', point);
-assert.ok(material(full.care.getState().products.cream) > atFull, 'Full bar must not block further application');
+assert.ok(full.care.getState().overallProgress < 1, 'Reapplication must lower a previously full bar');
 full.stroke(shortPath);
+assert.ok(full.care.getState().overallProgress < 1, 'A short rub must not hide remaining material from progress');
 const saturatedCream = full.care.getState().products.cream;
-assert.ok(saturatedCream.absorbed > 0, 'Absorption counter must record material even after skin hydration saturates');
+assert.ok(saturatedCream.absorbed > 0);
 assert.ok(Math.abs(material(saturatedCream) + saturatedCream.absorbed - atFull - 1) < 1e-6);
 assert.ok(full.care.getState().hydration.every(value => value === 1));
-assert.equal(full.care.getState().overallProgress, 1);
 noStages(full.care.getState());
 assert.equal(full.completion.length, 0);
+
+// A transient carry-only boundary state must also cap progress; pointer-up
+// cannot discard it merely because the visible surface was empty beforehand.
+const carryOnly = setup({ storage: new Map([[STORE, JSON.stringify(fullSave)]]) });
+carryOnly.pointer('pointerdown', point);
+carryOnly.care.stroke.carries.cleanser = .01; // Isolated transient boundary fixture.
+assert.ok(carryOnly.care.getState().overallProgress < 1, 'Held product counts as unfinished cleanup');
+carryOnly.pointer('pointercancel', point);
+assert.ok(Math.abs(material(carryOnly.care.getState().products.cleanser) - .01) < 1e-6);
+assert.ok(carryOnly.care.getState().overallProgress < 1);
+
+// Serum and cream must fade to actual zero under continued hand rubbing,
+// without requiring more product or leaving a permanent hydration/massage wash.
+for (const id of ['serum', 'cream']) {
+  const item = setup({ storage: new Map([[STORE, JSON.stringify(fullSave)]]) });
+  const absorbedBefore = item.care.getState().products[id].absorbed;
+  item.toolTap(id, point);
+  let passes = 0;
+  while (material(item.care.getState().products[id]) > 0 && passes < 160) {
+    item.stroke(shortPath);
+    passes++;
+  }
+  assert.ok(passes > 0 && passes < 160, id + ' must disappear after finite continued rubbing');
+  assert.equal(material(item.care.getState().products[id]), 0);
+  assert.ok(Math.abs(item.care.getState().products[id].absorbed - absorbedBefore - 1) < 1e-6);
+  assert.equal(item.care.getState().overallProgress, 1);
+  const paints = [];
+  const ctx = new Proxy({}, { get(target, key) {
+    if (key === 'createRadialGradient') return () => ({ addColorStop() {} });
+    if (['fill', 'stroke', 'drawImage', 'fillRect', 'strokeRect', 'putImageData'].includes(key)) {
+      return () => paints.push(key);
+    }
+    return () => {};
+  } });
+  item.care.draw(ctx);
+  assert.deepEqual(paints, [], 'Cleared skin must not retain a painted hydration/massage overlay');
+}
 
 // Keyboard towel must find unspread dots at arbitrary source positions,
 // even when the face has no dirt/film and the dot misses preset keyboard spots.
@@ -440,10 +507,116 @@ const arbitraryDotSave = JSON.parse(cleanFixture.storage.get(STORE));
 arbitraryDotSave.dirt.fill(0);
 arbitraryDotSave.products.serum.dots = [{ x: 345, y: 705, amount: 1 }];
 const arbitraryWipe = setup({ storage: new Map([[STORE, JSON.stringify(arbitraryDotSave)]]) });
+arbitraryWipe.window.DressLabCareRoom.setTool('towel');
+arbitraryWipe.toolKey('towel');
+assert.equal(material(arbitraryWipe.care.getState().products.serum), 1, 'Keyboard dry towel must not clean');
+arbitraryWipe.wet();
 arbitraryWipe.toolKey('towel');
 const wipedDot = material(arbitraryWipe.care.getState().products.serum);
 assert.ok(wipedDot > 0 && wipedDot < 1, 'Keyboard towel must target and gradually wipe an arbitrary live dot');
 assert.ok(arbitraryWipe.care.getState().overallProgress > 0);
+
+// Wet towel clears all three products and dirt after finite passes, including
+// visible remnants near the eye holes and face edges in an old high-work save.
+const wipeSave = structuredClone(fullSave);
+wipeSave.towelWet = false;
+wipeSave.dirt = empty.dirt.slice();
+const edgePoints = [{ x: 329, y: 522 }, { x: 230, y: 600 }, { x: 430, y: 600 },
+  { x: 143, y: 719 }, { x: 329, y: 700 }, { x: 514, y: 719 },
+  { x: 237, y: 744 }, { x: 422, y: 744 }, { x: 237, y: 856 },
+  { x: 422, y: 856 }, { x: 329, y: 805 }, { x: 329, y: 916 }];
+for (const product of Object.values(wipeSave.products)) {
+  product.dots = edgePoints.map(point => ({ ...point, amount: 1.5 }));
+  product.film.fill(.002);
+}
+const allWipe = setup({ storage: new Map([[STORE, JSON.stringify(wipeSave)]]) });
+allWipe.window.DressLabCareRoom.setTool('towel');
+assert.ok(allWipe.care.getState().overallProgress < 1);
+const residue = state => sum(Object.values(state.products).map(material)) + sum(state.dirt);
+const beforeDryWipe = residue(allWipe.care.getState());
+allWipe.toolStroke('towel', shortPath);
+assert.equal(residue(allWipe.care.getState()), beforeDryWipe);
+allWipe.wet();
+let wipePasses = 0;
+while (residue(allWipe.care.getState()) > 0 && wipePasses < 60) {
+  for (const position of edgePoints) {
+    allWipe.toolStroke('towel', [position, { x: position.x + 4, y: position.y }, position]);
+  }
+  wipePasses++;
+}
+assert.ok(wipePasses > 0 && wipePasses < 60, 'Wet cleanup must terminate rather than leave an exponential tail');
+assert.equal(residue(allWipe.care.getState()), 0, 'No product/dirt remnant should survive full-face wet wiping');
+assert.equal(allWipe.care.getState().overallProgress, 1);
+assert.equal(allWipe.care.getState().towelWet, true);
+const wetReload = setup({ storage: allWipe.storage });
+assert.equal(wetReload.care.getState().towelWet, true, 'Wetted towel persists across reloads');
+wetReload.window.DressLabCareRoom.setTool('towel');
+wetReload.toolEvent('start', 'towel', point);
+wetReload.toolEvent('cancel', 'towel', point);
+assert.equal(wetReload.care.getState().towelWet, true, 'Cancellation must not dry an already wet towel');
+wetReload.window.DressLabRooms.setRoom('dress');
+wetReload.care.reset();
+wetReload.wet();
+assert.equal(wetReload.care.getState().towelWet, false, 'Hidden care cannot wet the towel');
+
+// The towel footprint can cross an eye opening or extend beyond the facial
+// edge to reach nearby skin residue; source paint stays inside the face mask.
+const footprintSave = structuredClone(fullSave);
+footprintSave.towelWet = true;
+footprintSave.products.serum.dots = [{ x: 143, y: 719, amount: 1 }, { x: 237, y: 744, amount: 1 }];
+const footprint = setup({ storage: new Map([[STORE, JSON.stringify(footprintSave)]]) });
+footprint.window.DressLabCareRoom.setTool('towel');
+for (let pass = 0; pass < 6; pass++) {
+  for (const center of [{ x: 125, y: 719 }, { x: 237, y: 800 }]) {
+    footprint.toolStroke('towel', [center, { x: center.x + 10, y: center.y }, center]);
+  }
+}
+assert.equal(material(footprint.care.getState().products.serum), 0,
+  'Wide wet towel must clear face-edge and eye-edge residue');
+assert.equal(footprint.care.getState().overallProgress, 1);
+
+// A captured wet cloth can cross the face between events even when both
+// endpoints lie outside its expanded contact region.
+const crossingSave = structuredClone(fullSave);
+crossingSave.towelWet = true;
+crossingSave.careWork.towel = 0;
+crossingSave.products.serum.dots = [{ x: 329, y: 719, amount: 1 }];
+const crossing = setup({ storage: new Map([[STORE, JSON.stringify(crossingSave)]]) });
+crossing.window.DressLabCareRoom.setTool('towel');
+crossing.toolEvent('start', 'towel', { x: 70, y: 719 });
+crossing.toolEvent('move', 'towel', { x: 610, y: 719 });
+assert.ok(material(crossing.care.getState().products.serum) < 1,
+  'A fast captured sweep must wipe the face crossed between outside endpoints');
+assert.ok(crossing.care.getState().careWork.towel > 0,
+  'Actual removal along a crossed face must earn towel work');
+crossing.toolEvent('end', 'towel', { x: 610, y: 719 });
+
+const outsideCloth = setup({ storage: new Map([[STORE, JSON.stringify(crossingSave)]]) });
+outsideCloth.window.DressLabCareRoom.setTool('towel');
+const outsideBefore = signature(outsideCloth.care.getState());
+for (const position of [{ x: 70, y: 719 }, { x: 610, y: 719 }]) {
+  outsideCloth.toolStroke('towel', [position, position, position]);
+}
+assert.deepEqual(signature(outsideCloth.care.getState()), outsideBefore,
+  'A stationary cloth outside the face must not remove material');
+assert.equal(outsideCloth.care.getState().careWork.towel, 0,
+  'Stationary out-of-bounds contact must not earn towel work');
+
+// Basin water can overlap the displayed doll. While UI reports overBasin,
+// captured towel motion must wet/move the cursor without wiping the face.
+const overBasin = setup({ storage: new Map([[STORE, JSON.stringify(footprintSave)]]) });
+overBasin.window.DressLabCareRoom.setTool('towel');
+const basinBefore = signature(overBasin.care.getState());
+for (const [phase, p] of [['start', { x: 143, y: 719 }], ['move', { x: 153, y: 719 }],
+  ['move', { x: 143, y: 719 }], ['end', { x: 143, y: 719 }]]) {
+  overBasin.advance();
+  const screen = overBasin.client(p);
+  overBasin.window.dispatchEvent({ type: 'dresslab:facial-tool-drag', detail: {
+    phase, tool: 'towel', pointerId: 91, clientX: screen.x, clientY: screen.y, overBasin: true
+  } });
+}
+assert.deepEqual(signature(overBasin.care.getState()), basinBefore);
+assert.equal(overBasin.care.cursor.hidden, true);
 
 // Reset leaves appearance, selected tool and unrelated state untouched.
 restored.rig.skinTone = { hex: '#C68C73' };
@@ -464,15 +637,21 @@ assert.deepEqual(signature(setup({ storage: h.storage }).care.getState()), empty
 const old = new Map([['dresslab-v2:facial-care:v1', JSON.stringify({ version: 1,
   coverage: Array.from({ length: 5 }, () => Array(100).fill(1)) })]]);
 assert.deepEqual(signature(setup({ storage: old }).care.getState()), empty);
-for (const value of ['{broken', 'null', '{"version":999}', '{"version":3,"products":{}}']) {
+for (const value of ['{broken', 'null', '{"version":999}', '{"version":4,"products":{}}']) {
   assert.deepEqual(signature(setup({ storage: new Map([[STORE, value]]) }).care.getState()), empty);
 }
-// V3 requires a valid absorption counter; V2 migration above accepts absence.
+// V4 requires valid wetness and absorption fields; V2 migration accepts no counter.
 for (const amount of [undefined, null, -1]) {
   const invalidCounter = structuredClone(arbitraryDotSave);
   if (amount === undefined) delete invalidCounter.products.serum.absorbed;
   else invalidCounter.products.serum.absorbed = amount;
   assert.deepEqual(signature(setup({ storage: new Map([[STORE, JSON.stringify(invalidCounter)]]) }).care.getState()), empty);
+}
+for (const wetness of [undefined, null, 'true', 1]) {
+  const invalidWetness = structuredClone(arbitraryDotSave);
+  if (wetness === undefined) delete invalidWetness.towelWet;
+  else invalidWetness.towelWet = wetness;
+  assert.deepEqual(signature(setup({ storage: new Map([[STORE, JSON.stringify(invalidWetness)]]) }).care.getState()), empty);
 }
 const blocked = setup({ blockedStorage: true });
 blocked.toolKey('cleanser');
@@ -507,5 +686,6 @@ assert.deepEqual(draws, ['hand', 'head', 'care', 'eyes'], 'Care must be between 
 
 console.log('PASS: unlimited dragged applications; selection-only taps; bare-finger mixed spreading;');
 console.log('tool-only towel/roller; accelerated, time-aware, subpixel-safe work; finite mass/absorption;');
-console.log('overall progress from real work with no lock; cancellation/transforms; v3 persistence/v2 migration;');
+console.log('residue-aware progress, wet-only finite cleanup, product fading with no permanent wash;');
+console.log('cancellation/transforms, v4 persistence and old-save migration, keyboard and reset isolation;');
 console.log('keyboard split, no auto-selection, appearance-safe reset, storage fallback and head→care→eyes.');
