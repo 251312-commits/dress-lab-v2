@@ -32,6 +32,110 @@
       envelope * (frequency * (-displacement * s + b * c) - decay * offset)];
   }
 
+  // Read each registered PNG's alpha once at load time. No pixel readbacks
+  // occur during gaze animation.
+  function readAlpha(sprite) {
+    const data = sprite.getContext("2d").getImageData(0, 0, BOX.w, BOX.h).data;
+    const alpha = new Uint8Array(BOX.w * BOX.h);
+    for (let i = 0; i < alpha.length; i++) alpha[i] = data[i * 4 + 3];
+    return alpha;
+  }
+
+  function alphaBounds(alpha, from, to) {
+    let x0 = to, x1 = from, y0 = BOX.h, y1 = 0;
+    for (let y = 0; y < BOX.h; y++) {
+      for (let x = from; x < to; x++) {
+        if (alpha[y * BOX.w + x] < 8) continue;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x + 1);
+        y0 = Math.min(y0, y); y1 = Math.max(y1, y + 1);
+      }
+    }
+    if (x1 <= x0 || y1 <= y0) return null;
+    return { x0, x1, y0, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2,
+      w: x1 - x0, h: y1 - y0 };
+  }
+
+  // Two-pass chamfer distance to the non-opaque interior boundary.
+  // A conservative factor and pixel margin below correct diagonal error.
+  function distanceField(alpha) {
+    const w = BOX.w, h = BOX.h, d = new Float32Array(w * h), diag = Math.SQRT2;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        d[i] = x && y && x < w - 1 && y < h - 1 && alpha[i] >= 160 ? w + h : 0;
+      }
+    }
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        d[i] = Math.min(d[i], d[i - 1] + 1, d[i - w] + 1,
+          d[i - w - 1] + diag, d[i - w + 1] + diag);
+      }
+    }
+    for (let y = h - 2; y >= 1; y--) {
+      for (let x = w - 2; x >= 1; x--) {
+        const i = y * w + x;
+        d[i] = Math.min(d[i], d[i + 1] + 1, d[i + w] + 1,
+          d[i + w - 1] + diag, d[i + w + 1] + diag);
+      }
+    }
+    return d;
+  }
+
+  function clearance(field, x, y) {
+    // Bilinear sampling in pixel-centre coordinates.
+    const u = x - 0.5, v = y - 0.5;
+    const ix = Math.floor(u), iy = Math.floor(v);
+    if (ix < 0 || iy < 0 || ix >= BOX.w - 1 || iy >= BOX.h - 1) return 0;
+    const fx = u - ix, fy = v - iy, i = iy * BOX.w + ix;
+    const a = field[i] * (1 - fx) + field[i + 1] * fx;
+    const b = field[i + BOX.w] * (1 - fx) + field[i + BOX.w + 1] * fx;
+    return Math.max(0, (a * (1 - fy) + b * fy) * 0.9 - 1);
+  }
+
+  function visibleClearance(eye, masks, x, y, dx, dy, sx, sy) {
+    // Inverse of the exact drawing transform of this eye's pupil.
+    const px = eye.pupil.cx + (x - eye.pupil.cx - dx) / sx;
+    const py = eye.pupil.cy + (y - eye.pupil.cy - dy) / sy;
+    return Math.min(clearance(masks.sclera, x, y),
+      clearance(masks.pupil, px, py) * Math.min(sx, sy));
+  }
+
+  function fitHighlight(eye, masks, preferredX, preferredY, dx, dy, sx, sy, size) {
+    const h = eye.highlight, baseRadius = Math.hypot(h.w, h.h) / 2;
+    // Keep the whole glint visible, not just its centre. Slide it into
+    // sclera ∩ moving pupil before resorting to shrinking.
+    const safe = (x, y, r) => visibleClearance(eye, masks, x, y, dx, dy, sx, sy) >= r;
+    for (const factor of [1, 0.85, 0.65, 0.45, 0.25]) {
+      const scale = size * factor, radius = baseRadius * scale;
+      if (safe(preferredX, preferredY, radius)) {
+        return { x: preferredX, y: preferredY, scale, radius };
+      }
+      let best = null, min = Infinity;
+      const b = eye.sclera;
+      // Each eye is constrained independently; the two apertures differ.
+      for (let y = b.y0 + 0.5; y < b.y1; y++) {
+        for (let x = b.x0 + 0.5; x < b.x1; x++) {
+          const cost = (x - preferredX) ** 2 + (y - preferredY) ** 2;
+          if (cost >= min || !safe(x, y, radius)) continue;
+          min = cost; best = { x, y };
+        }
+      }
+      if (!best) continue;
+      // Recover subpixel motion instead of snapping to the pixel grid.
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 8; i++) {
+        const t = (lo + hi) / 2;
+        const x = best.x + (preferredX - best.x) * t;
+        const y = best.y + (preferredY - best.y) * t;
+        if (safe(x, y, radius)) lo = t; else hi = t;
+      }
+      return { x: best.x + (preferredX - best.x) * lo,
+        y: best.y + (preferredY - best.y) * lo, scale, radius };
+    }
+    return null;
+  }
+
   function blinkAmount(elapsed) {
     if (elapsed < 95) return BLINK_DEPTH * easeOut(elapsed / 95);
     if (elapsed < 142) return BLINK_DEPTH;
@@ -56,6 +160,12 @@
       this.sprites = null;
       this.irisBuffer = null;
       this.irisContext = null;
+      this.highlightBuffer = null;
+      this.highlightContext = null;
+      this.eyeParts = null;
+      this.eyeMasks = null;
+      this.highlightPlacements = [];
+      this.layerKey = null;
       this.enabled = true;
       this.reduced = Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
       this.pointerId = null;
@@ -119,7 +229,22 @@
       this.irisBuffer.width = BOX.w;
       this.irisBuffer.height = BOX.h;
       this.irisContext = this.irisBuffer.getContext("2d");
-      if (!this.irisContext) throw new Error("눈 합성용 Canvas를 사용할 수 없어");
+      this.highlightBuffer = document.createElement("canvas");
+      this.highlightBuffer.width = BOX.w;
+      this.highlightBuffer.height = BOX.h;
+      this.highlightContext = this.highlightBuffer.getContext("2d");
+      if (!this.irisContext || !this.highlightContext) throw new Error("눈 합성용 Canvas를 사용할 수 없어");
+      const alpha = Object.fromEntries(["sclera", "pupil", "highlights"].map(
+        name => [name, readAlpha(this.sprites[name])]));
+      const middle = Math.round(EYE.x - BOX.x);
+      this.eyeParts = [[0, middle], [middle, BOX.w]].map(([from, to]) => {
+        const sclera = alphaBounds(alpha.sclera, from, to);
+        const pupil = alphaBounds(alpha.pupil, from, to);
+        const highlight = alphaBounds(alpha.highlights, from, to);
+        if (!sclera || !pupil || !highlight) throw new Error("눈 파츠의 좌우 알파 영역을 찾을 수 없어");
+        return { from, to, sclera, pupil, highlight };
+      });
+      this.eyeMasks = { sclera: distanceField(alpha.sclera), pupil: distanceField(alpha.pupil) };
       this.rig.eyes = this;
       this.canvas.addEventListener("pointerdown", this.onDown);
       this.canvas.addEventListener("pointermove", this.onMove);
@@ -129,6 +254,56 @@
       this.scheduleBlink();
       this.rig.render();
       return this;
+    }
+
+    prepareEyeLayers() {
+      const key = [this.x, this.y, this.vx, this.vy, this.targetX,
+        this.hx, this.hy, this.hvx, this.hvy].join(",");
+      if (this.layerKey === key) return;
+      this.layerKey = key;
+      const iris = this.irisContext, glint = this.highlightContext;
+      for (const buffer of [iris, glint]) {
+        buffer.setTransform(1, 0, 0, 1, 0, 0);
+        buffer.globalCompositeOperation = "source-over";
+        buffer.clearRect(0, 0, BOX.w, BOX.h);
+      }
+
+      // Horizontal boing: stretch in the direction of travel, compress as
+      // the iris overshoots, then rebound. Separate pivots preserve eye spacing.
+      const travel = clamp(Math.abs(this.vx) / 280, 0, 1);
+      const recoil = clamp((this.x - this.targetX) * this.vx / 700, 0, 1);
+      const sx = 1 + travel * 0.14 - recoil * 0.21;
+      const sy = 1 - (sx - 1) * 0.55;
+      const size = 1 + 0.13 * clamp(Math.hypot(this.hvx - this.vx, this.hvy - this.vy) / 330, 0, 1);
+      this.highlightPlacements = [];
+
+      for (const eye of this.eyeParts) {
+        const p = eye.pupil, h = eye.highlight;
+        iris.drawImage(this.sprites.pupil, eye.from, 0, eye.to - eye.from, BOX.h,
+          p.cx + this.x + (eye.from - p.cx) * sx, p.cy + this.y - p.cy * sy,
+          (eye.to - eye.from) * sx, BOX.h * sy);
+        const desiredX = p.cx + this.x + (h.cx - p.cx) * sx +
+          clamp(this.hx - this.x, -11, 11);
+        const desiredY = p.cy + this.y + (h.cy - p.cy) * sy +
+          clamp(this.hy - this.y, -9, 9);
+        const place = fitHighlight(eye, this.eyeMasks, desiredX, desiredY,
+          this.x, this.y, sx, sy, size);
+        this.highlightPlacements.push(place);
+        if (place) {
+          glint.drawImage(this.sprites.highlights, h.x0, h.y0, h.w, h.h,
+            place.x - h.w * place.scale / 2, place.y - h.h * place.scale / 2,
+            h.w * place.scale, h.h * place.scale);
+        }
+      }
+
+      // The final pixel mask is the *visible pupil*, not the sclera alone.
+      // This guarantees no highlight can appear on the eye white.
+      iris.globalCompositeOperation = "destination-in";
+      iris.drawImage(this.sprites.sclera, 0, 0);
+      iris.globalCompositeOperation = "source-over";
+      glint.globalCompositeOperation = "destination-in";
+      glint.drawImage(this.irisBuffer, 0, 0);
+      glint.globalCompositeOperation = "source-over";
     }
 
     draw(ctx) {
@@ -154,22 +329,11 @@
       ctx.scale(1 + Math.max(0, closed) * 0.015, openness);
       ctx.translate(-EYE.x, -EYE.lidBottom);
 
-      // Keep sclera and iris visible throughout the partial blink. The
-      // registered alpha mask, compressed along with the lashes, clips them.
+      // All composited layers share the partial-blink transform.
+      this.prepareEyeLayers();
       ctx.drawImage(this.sprites.sclera, BOX.x, BOX.y);
-      const buffer = this.irisContext;
-      buffer.setTransform(1, 0, 0, 1, 0, 0);
-      buffer.globalCompositeOperation = "source-over";
-      buffer.clearRect(0, 0, BOX.w, BOX.h);
-      buffer.drawImage(this.sprites.pupil, this.x, this.y);
-      // Catchlights lag behind the iris, with bounded elastic recoil.
-      buffer.drawImage(this.sprites.highlights,
-        clamp(this.hx, this.x - 2.8, this.x + 2.8),
-        clamp(this.hy, this.y - 2.4, this.y + 2.4));
-      buffer.globalCompositeOperation = "destination-in";
-      buffer.drawImage(this.sprites.sclera, 0, 0);
-      buffer.globalCompositeOperation = "source-over";
       ctx.drawImage(this.irisBuffer, BOX.x, BOX.y);
+      ctx.drawImage(this.highlightBuffer, BOX.x, BOX.y);
       // Original eyelash linework always remains in front of the eye whites.
       ctx.drawImage(this.sprites.eyelashes, BOX.x, BOX.y);
       ctx.restore();
@@ -230,9 +394,15 @@
       if (event.button != null && event.button !== 0) return;
       if (this.pointerId !== null && this.pointerId !== event.pointerId) return;
       this.pointerId = event.pointerId;
+      const previousX = this.targetX;
       this.pointTo(event);
-      // Even a second tap in the same direction gives the catchlight a tiny bounce.
-      if (!this.reduced) this.hvy -= 34;
+      if (!this.reduced) {
+        // Inertial kick against the turn; the glint then catches up elastically.
+        const turn = this.targetX - previousX;
+        this.hvx = clamp(this.hvx - (Math.abs(turn) > 0.5 ? clamp(turn * 3.2, -110, 110) :
+          (this.targetX < 0 ? -32 : 32)), -230, 230);
+        this.hvy = clamp(this.hvy - 48, -180, 180);
+      }
       try { this.canvas.setPointerCapture(event.pointerId); } catch (_) { /* optional */ }
     }
 
@@ -282,17 +452,17 @@
       this.lastFrame = now;
       // The iris reacts before the highlight; damped recoil is kept inside
       // the available eye-white aperture.
-      [this.x, this.vx] = spring(this.x, this.vx, this.targetX, dt, 23, 0.44);
+      [this.x, this.vx] = spring(this.x, this.vx, this.targetX, dt, 25, 0.31);
       [this.y, this.vy] = spring(this.y, this.vy, this.targetY, dt, 23, 0.44);
       // Leave room for a visible overshoot while keeping extreme flicks bounded.
-      const x = clamp(this.x, -EYE.maxX - 4.5, EYE.maxX + 4.5);
+      const x = clamp(this.x, -EYE.maxX - 7.5, EYE.maxX + 7.5);
       const y = clamp(this.y, -EYE.maxY - 3.5, EYE.maxY + 3.5);
       if (x !== this.x) this.vx = 0;
       if (y !== this.y) this.vy = 0;
       this.x = x;
       this.y = y;
-      [this.hx, this.hvx] = spring(this.hx, this.hvx, this.x, dt, 16, 0.57);
-      [this.hy, this.hvy] = spring(this.hy, this.hvy, this.y, dt, 16, 0.57);
+      [this.hx, this.hvx] = spring(this.hx, this.hvx, this.x, dt, 18, 0.36);
+      [this.hy, this.hvy] = spring(this.hy, this.hvy, this.y, dt, 18, 0.39);
 
       if (this.blinkStart !== null) {
         const elapsed = now - this.blinkStart;
