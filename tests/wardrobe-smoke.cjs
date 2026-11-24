@@ -1,0 +1,22 @@
+// Static smoke check for the first V2 garment. Run: node tests/wardrobe-smoke.cjs
+const fs = require("node:fs");
+const assert = require("node:assert/strict");
+const path = require("node:path");
+const root = path.join(__dirname, "..");
+const dir = path.join(root, "clothes/basic-white-tee");
+const item = JSON.parse(fs.readFileSync(path.join(dir,"item.json"),"utf8"));
+assert.deepEqual(item.canvas, {width:1206,height:2622});
+assert.deepEqual(item.parts.map(p=>p.joint), ["shoulderL","shoulderR","torso"]);
+for (const part of item.parts) {
+  const svg=fs.readFileSync(path.join(dir,part.src),"utf8");
+  assert.match(svg,/<svg\b/);
+  assert.match(svg,/viewBox=/);
+  assert.doesNotMatch(svg,/<rect[^>]+(?:fill="white"|fill="#fff")/i, "No opaque background");
+}
+const index=fs.readFileSync(path.join(root,"index.html"),"utf8");
+const rig=fs.readFileSync(path.join(root,"rig/rig.js"),"utf8");
+assert.match(index,/clothes\/wardrobe\.js/);
+assert.match(index,/wardrobe\.load\(\)/);
+assert.match(rig,/this\.wardrobe\.draw\(ctx\)/);
+assert.match(fs.readFileSync(path.join(root,"ui/layout.js"),"utf8"),/wardrobe\.setEquipped\(next\)/);
+console.log("Wardrobe smoke checks passed.");

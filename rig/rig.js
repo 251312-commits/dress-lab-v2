@@ -179,6 +179,9 @@
         if (filename === "01-Head.PNG" && this.eyes) this.eyes.draw(ctx);
         ctx.restore();
       }
+      // Draw equipped clothing within the same root bounce/translation space.
+      // Clothing owns its material pixels, separate from skin-tone recoloring.
+      if (this.wardrobe) this.wardrobe.draw(ctx);
       ctx.restore();
 
       // Full.PNG is never part of the character. It can only be shown in debug mode.

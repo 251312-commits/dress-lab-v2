@@ -101,6 +101,7 @@
   <script src="./rig/skin-tone.js?v=live-skin-png-20261122"></script>
   <script src="./rig/rig.js?v=live-skin-png-20261122"></script>
   <script src="./rig/eyes.js?v=eyes-boing-gaze-20261124"></script>
+  <script src="./clothes/wardrobe.js?v=white-tee-v1-20261124"></script>
   <script src="./rig/body-shape.js?v=leg-continuous-v11b-20261122"></script>
   <script src="./rig/body-shape-debug.js?v=leg-continuous-v11-20261122"></script>
   <script src="./rig/motion.js?v=motions-20261122b"></script>
@@ -276,6 +277,21 @@
               window.DressLabMagicRoom?.bindShape(bodyShape);
             } catch (shapeError) {
               console.warn("국소 체형 변형 초기화 실패:", shapeError);
+            }
+          }
+
+          // Load the first transparent, rig-attached shirt independently.
+          // Failed outfit assets must never prevent the base doll from loading.
+          if (window.DressLabWardrobe) {
+            try {
+              const wardrobe = new window.DressLabWardrobe(rig);
+              window.dressLabWardrobe = wardrobe;
+              await wardrobe.load();
+            } catch (outfitError) {
+              console.warn("셔츠 에셋 로드 실패 · 기본 인형은 계속 사용:", outfitError);
+              window.dispatchEvent(new CustomEvent("dresslab:wardrobe-error", {
+                detail: { message: outfitError.message }
+              }));
             }
           }
 

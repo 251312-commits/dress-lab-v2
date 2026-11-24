@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="134" height="162" viewBox="148 978 134 162">
+  <defs>
+    <linearGradient id="cotton" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#E8E8ED"/><stop offset=".22" stop-color="#FBFBFD"/>
+      <stop offset=".50" stop-color="#FFFFFF"/><stop offset=".79" stop-color="#F5F5F8"/>
+      <stop offset="1" stop-color="#DADBE2"/>
+    </linearGradient>
+    <linearGradient id="shadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E2E1E6" stop-opacity=".1"/>
+      <stop offset="1" stop-color="#9CA0AF" stop-opacity=".3"/>
+    </linearGradient>
+  </defs>
+  <path d="M251 990 C228 992 210 1002 196 1025 C181 1048 174 1077 168 1105 Q180 1118 201 1122 C207 1097 220 1081 235 1057 Q250 1032 270 1016 Z"
+    fill="url(#cotton)" stroke="#9994A1" stroke-width="3.3" stroke-linejoin="round"/>
+  <path d="M170 1101 Q185 1111 202 1118" fill="none" stroke="#ADABB7" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M180 1095 Q189 1101 205 1107" fill="none" stroke="#F9F9FC" stroke-width="3"/>
+  <path d="M229 1013 Q204 1046 202 1078" fill="none" stroke="#BFC0CB" stroke-width="4" opacity=".55"/>
+  <path d="M250 995 Q244 1027 228 1044" fill="none" stroke="#FFFFFF" stroke-width="7" opacity=".85"/>
+</svg>

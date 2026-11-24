@@ -1,0 +1,45 @@
+{
+  "id": "basic-white-tee",
+  "name": "베이직 화이트 반팔 티셔츠",
+  "group": "upper",
+  "params": {
+    "formality": -3,
+    "flamboyance": -3,
+    "comfort": 4,
+    "novelty": -4,
+    "exposure": -2
+  },
+  "tags": [
+    "#미니멀",
+    "#코튼",
+    "#편안한"
+  ],
+  "canvas": {
+    "width": 1206,
+    "height": 2622
+  },
+  "parts": [
+    {
+      "id": "leftSleeve",
+      "src": "left-sleeve.svg",
+      "joint": "shoulderL",
+      "x": 148,
+      "y": 978
+    },
+    {
+      "id": "rightSleeve",
+      "src": "right-sleeve.svg",
+      "joint": "shoulderR",
+      "x": 375,
+      "y": 978
+    },
+    {
+      "id": "torso",
+      "src": "torso.svg",
+      "joint": "torso",
+      "x": 215,
+      "y": 955
+    }
+  ],
+  "notes": "Original transparent SVG garment art. Sleeves rotate with shoulder joints; torso follows upper-body motion and approximate body proportions."
+}
