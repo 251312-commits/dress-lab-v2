@@ -11,7 +11,7 @@
 .ui-scene[data-room="care"] .ui-care-room { display: block; }
 
 /* The white rectangular shelf backing begins at the horizontal line
-   crossing the tool circles, not at the top or bottom of the tools.
+   crossing the tools, not at their top or bottom.
    Shelf top (1977px) + line offset (138px) = 2115px. */
 .ui-scene[data-room="care"]::before {
   content: "";
@@ -125,13 +125,7 @@
   font-family: "Noto Serif KR", "AppleMyungjo", serif;
   pointer-events: none;
 }
-.ui-care-room[data-care-tab="facial"] .ui-care-dialog__text {
-  font-family: inherit;
-  font-size: 48px;
-  font-weight: 600;
-  line-height: 1.5;
-  padding: 30px 65px;
-}
+.ui-care-room[data-care-tab="facial"] .ui-care-dialog { display: none; }
 
 /* Talk button floats beside the close-up character, as in the reference. */
 .ui-care-talk {
@@ -173,10 +167,10 @@
 }
 .ui-care-tools {
   position: absolute;
-  top: -15px;
+  top: -30px;
   left: 88px;
   right: 88px;
-  height: 315px;
+  height: 360px;
   display: flex;
   align-items: flex-start;
   overflow-x: auto;
@@ -199,8 +193,8 @@
 .ui-care-tool-slot {
   flex: 0 0 calc(100% / 3);
   min-width: 0;
-  height: 315px;
-  padding: 15px 0;
+  height: 360px;
+  padding: 30px 0 0;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -227,89 +221,65 @@
   box-shadow: inset 0 0 0 8px #fff;
 }
 .ui-care-tool--illustrated {
-  width: 266px;
-  height: 286px;
-  padding: 0 15px;
+  width: 306px;
+  /* 276px image + 2px gap + 36.8px label = 314.8px, ending at
+     y=2291.8. Page dots occupy y=2294..2306; the divider starts at 2307. */
+  height: 320px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   border: 0 !important;
-  border-radius: 20px !important;
+  border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
   font-family: inherit !important;
-  font-size: 35px !important;
+  font-size: 32px !important;
   font-weight: 650 !important;
   letter-spacing: -.03em;
 }
 .ui-care-tool__art {
   position: relative;
-  width: 218px;
-  height: 218px;
-  flex: 0 0 218px;
+  width: 284px;
+  height: 276px;
+  flex: 0 0 276px;
   display: grid;
   place-items: center;
-  background: #f4f7f1;
-  border: 5px solid #52645b;
-  border-radius: 50%;
+  background: transparent;
+  border: 0;
+  transform-origin: center bottom;
 }
 .ui-care-tool__art img {
   display: block;
-  width: 196px;
-  height: 196px;
+  width: 284px;
+  height: 276px;
   object-fit: contain;
   pointer-events: none;
   -webkit-user-drag: none;
 }
 .ui-care-tool--illustrated[aria-pressed="true"] .ui-care-tool__art {
-  background: #e5f2e9;
-  border-color: #427859;
-  box-shadow: 0 0 0 7px #fff, 0 0 0 12px #729e86;
+  transform: translateY(-7px) scale(1.015);
 }
 .ui-care-tool--illustrated[aria-pressed="true"] {
   background: transparent !important;
   box-shadow: none !important;
 }
-.ui-care-tool--illustrated[data-current="true"] .ui-care-tool__label {
-  color: #32634a;
+/* The hint follows the transparent image silhouette: no disk, badge or
+   selection lock. A different tool can always be chosen. */
+.ui-care-tool--illustrated[data-recommended="true"] .ui-care-tool__art img {
+  filter: drop-shadow(0 0 9px rgba(222, 203, 157, .65))
+    drop-shadow(0 0 17px rgba(177, 205, 191, .5));
 }
 .ui-care-tool__label { line-height: 1.15; }
-.ui-care-tool__progress {
-  width: 155px;
-  height: 7px;
-  flex: 0 0 7px;
-  overflow: hidden;
-  border-radius: 8px;
-  background: #e7e9e4;
+@media (prefers-reduced-motion: no-preference) {
+  .ui-care-tool__art { transition: transform 150ms ease; }
+  .ui-care-tool__art img { transition: filter 220ms ease; }
 }
-.ui-care-tool__progress > span {
-  display: block;
-  width: calc(var(--care-progress, 0) * 100%);
-  height: 100%;
-  border-radius: inherit;
-  background: #579272;
-}
-.ui-care-tool__done {
-  position: absolute;
-  top: -5px;
-  right: -6px;
-  width: 52px;
-  height: 52px;
-  display: none;
-  place-items: center;
-  color: #fff;
-  background: #4b8263;
-  border: 4px solid #fff;
-  border-radius: 50%;
-  font-size: 33px;
-  line-height: 1;
-}
-.ui-care-tool[data-complete="true"] .ui-care-tool__done { display: grid; }
 .ui-care-shelf-arrow {
   position: absolute;
   top: 57px;
-  width: 80px;
+  width: 88px;
   height: 150px;
   display: grid;
   place-items: center;
@@ -322,39 +292,30 @@
   line-height: 1;
   pointer-events: auto;
 }
-.ui-care-shelf-arrow--previous { left: 3px; }
-.ui-care-shelf-arrow--next { right: 3px; }
+.ui-care-shelf-arrow--previous { left: 0; }
+.ui-care-shelf-arrow--next { right: 0; }
 .ui-care-shelf-arrow:disabled { opacity: .22; cursor: default; }
 .ui-care-shelf-pages {
   position: absolute;
   left: 0;
   right: 0;
-  top: 296px;
+  top: 317px;
   display: flex;
   justify-content: center;
-  gap: 10px;
-  height: 31px;
+  gap: 18px;
+  height: 12px;
+  pointer-events: none;
 }
-.ui-care-shelf-pages button {
-  width: 62px;
-  height: 31px;
-  padding: 6px 12px;
-  display: grid;
-  place-items: center;
-  border: 0 !important;
-  background: transparent !important;
-}
-.ui-care-shelf-pages button span {
+.ui-care-shelf-page {
   display: block;
   width: 18px;
-  height: 18px;
-  border-radius: 50%;
+  height: 12px;
+  border-radius: 6px;
   background: #ccd4ce;
 }
-.ui-care-shelf-pages button[aria-current="true"] span {
-  width: 36px;
-  border-radius: 12px;
-  background: #4b8263;
+.ui-care-shelf-page[data-active="true"] {
+  width: 32px;
+  background: #8d9689;
 }
 .ui-care-shelf [hidden] { display: none !important; }
 
@@ -369,8 +330,7 @@
 .ui-care-tab:focus-visible,
 .ui-care-tool:focus-visible,
 .ui-care-talk:focus-visible,
-.ui-care-shelf-arrow:focus-visible,
-.ui-care-shelf-pages button:focus-visible {
+.ui-care-shelf-arrow:focus-visible {
   outline: 7px solid #426e8f;
   outline-offset: 6px;
 }

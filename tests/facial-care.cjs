@@ -18,10 +18,7 @@ const root = path.join(__dirname, '..');
 const toolIds = ['cleanser', 'towel', 'serum', 'cream', 'roller'];
 let server, browser, page;
 const qa = process.env.FACIAL_CARE_QA;
-const signature = state => ({
-  stage: state.stage, stageIndex: state.stageIndex, completed: state.completed,
-  stages: state.stages.map(({ id, progress, complete }) => ({ id, progress, complete }))
-});
+const signature = state => JSON.parse(JSON.stringify({ products: state.products, dirt: state.dirt, hydration: state.hydration, massage: state.massage }));
 const state = () => page.evaluate(() => window.DressLabFacialCare.getState());
 
 async function startServer() {
@@ -111,7 +108,7 @@ async function snapshot(name) {
   await page.goto(url + '/?room=care&idle=0', { waitUntil: 'load' });
   await ready();
   await page.evaluate(() => window.DressLabFacialCare.reset());
-  assert.equal((await state()).stage, 'cleanser');
+  assert.equal((await state()).selectedTool, 'cleanser');
 
   // Three visible slots with five tools must overflow without widening the page.
   const shelf = page.locator('.ui-care-tools');
@@ -146,79 +143,89 @@ async function snapshot(name) {
   });
   await page.keyboard.press('Enter');
   assert.equal(await page.evaluate(() => window.DressLabCareRoom.selectedTool), 'roller');
-  const untouched = signature(await state());
   await page.locator('#character').focus();
   await page.keyboard.press('Enter');
-  assert.deepEqual(signature(await state()), untouched, 'A later tool must not bypass cleanser');
+  assert.equal((await state()).selectedTool, 'roller', 'Massage must not select another tool');
 
-  await page.locator('[data-care-tool="cleanser"]').click();
+  // Recommendations have no authority over the user's selection or shelf.
+  const recommendedBefore = await page.evaluate(() => ({ selected: window.DressLabCareRoom.selectedTool,
+    scroll: document.querySelector('.ui-care-tools').scrollLeft }));
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('dresslab:facial-state', {
+    detail: { recommendedTool: 'cleanser' }
+  })));
+  assert.deepEqual(await page.evaluate(() => ({ selected: window.DressLabCareRoom.selectedTool,
+    scroll: document.querySelector('.ui-care-tools').scrollLeft })), recommendedBefore);
+  assert.equal(await page.locator('.ui-care-tool__done, .ui-care-tool__progress, [role="progressbar"]').count(), 0);
+  assert.equal(await page.locator('.ui-care-dialog').isVisible(), false);
+  assert.equal(await page.locator('#ui-care-dialog-text').textContent(), '');
+  assert.ok((await page.locator('.ui-care-tool').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label'))))
+    .every(label => !/%|완료|진행/.test(label)), 'Tool names must not contain progress or completion status');
+
+  // Free order: apply serum before cleanser. One drag is one deposition;
+  // two dots stay as dots until a third distinct contact has been made.
+  await page.locator('[data-care-tool="serum"]').click();
+  const untouched = signature(await state());
   await stroke([{ x: 75, y: 690 }, { x: 80, y: 720 }, { x: 75, y: 750 }]);
   assert.deepEqual(signature(await state()), untouched, 'Outside-face movement must not count');
+  await stroke([{ x: 260, y: 620 }, { x: 340, y: 640 }, { x: 390, y: 680 }]);
+  assert.equal((await state()).products.serum.dots.length, 1, 'One drag must not lay down all three dots');
+  assert.equal((await state()).products.serum.phase, 'apply');
+  const second = await toClient({ x: 405, y: 650 });
+  await page.mouse.click(second.x, second.y);
+  const twoDots = await state();
+  assert.equal(twoDots.products.serum.dots.length, 2);
+  assert.equal(twoDots.products.serum.phase, 'apply');
+  const partial = signature(twoDots);
 
-  // Vary head/neck and the full rig simultaneously. A real stroke over the
-  // transformed forehead should still reach the same source face region.
+  await page.locator('.ui-room-button[data-room="dress"]').click();
+  assert.equal((await state()).active, false);
+  assert.deepEqual(signature(await state()), partial, 'Room changes must preserve dots');
+  await page.locator('.ui-room-button[data-room="care"]').click();
+  await page.locator('[data-care-tab="facial"]').click();
+  assert.equal((await state()).selectedTool, 'serum', 'Returning to care must preserve tool choice');
+  assert.deepEqual(signature(await state()), partial);
+  await page.reload({ waitUntil: 'load' });
+  await ready();
+  assert.deepEqual(signature(await state()), partial, 'Refresh must preserve applied dots');
+  await page.locator('[data-care-tool="serum"]').click();
+
+  // Vary head/neck and the full rig. The third actual contact and following
+  // stroke must still meet the source face at its transformed location.
   await page.evaluate(() => {
     window.dressLabBodyShape.setShape({ head: 73, neck: 123, ratio: 118 });
     window.dressLabRig.setFrame({ torso: 6 }, { x: 12, y: -10, scaleX: 1.02, scaleY: .98 });
   });
+  const third = await toClient({ x: 329, y: 880 });
+  await page.mouse.click(third.x, third.y);
+  assert.equal((await state()).products.serum.dots.length, 3);
+  assert.equal((await state()).products.serum.phase, 'spread');
+  const dotted = signature(await state());
   await stroke([{ x: 280, y: 630 }, { x: 320, y: 605 }, { x: 380, y: 650 }, { x: 300, y: 700 }]);
-  const painted = await state();
-  assert.equal(painted.stage, 'cleanser');
-  assert.ok(painted.stages[0].progress > 0, 'Stroke on transformed face must add progress');
-  assert.ok(painted.stages[0].progress < 1, 'One small stroke must not complete the whole face');
-  const partial = signature(painted);
+  assert.notDeepEqual(signature(await state()), dotted, 'A later stroke must spread the dotted product');
+  assert.equal((await state()).selectedTool, 'serum', 'Spreading must never switch the selected tool');
+  await snapshot('facial-serum-mobile');
 
-  await page.locator('.ui-room-button[data-room="dress"]').click();
-  assert.equal((await state()).active, false);
-  assert.deepEqual(signature(await state()), partial, 'Room change must preserve partial treatment');
-  await page.locator('.ui-room-button[data-room="care"]').click();
-  await page.locator('[data-care-tab="facial"]').click();
-  assert.deepEqual(signature(await state()), partial);
-  await page.reload({ waitUntil: 'load' });
-  await ready();
-  assert.deepEqual(signature(await state()), partial, 'Refresh must preserve partial coverage');
-
-  // The accessible action exercises the same coverage/state transitions as
-  // pointer care. It does not call internal treatment or completion methods.
-  await page.locator('#character').focus();
-  const presses = {};
   for (const id of toolIds) {
-    assert.equal((await state()).stage, id, 'Treatment sequence changed unexpectedly');
     await page.locator('[data-care-tool="' + id + '"]').click();
-    await page.locator('#character').focus();
-    let count = 0;
-    while ((await state()).stage === id && count < 200) {
-      await page.keyboard.press(count % 2 ? 'Space' : 'Enter');
-      count++;
-    }
-    presses[id] = count;
-    assert.ok(count > 0 && count < 200, id + ' must be completable with keyboard input');
-    assert.equal((await state()).stages.find(stage => stage.id === id).complete, true);
+    assert.equal((await state()).selectedTool, id, 'Every tool must stay available in any order');
   }
-  const completed = await state();
-  assert.equal(completed.completed, true);
-  assert.ok(completed.stages.every(stage => stage.complete && stage.progress === 1));
-  await snapshot('facial-complete-mobile');
-  await page.reload({ waitUntil: 'load' });
-  await ready();
-  assert.deepEqual(signature(await state()), signature(completed), 'Completion must survive refresh');
-
-  // Use the visible replay button and verify it only resets care data.
+  // Reset remains a deliberate button action and does not select a new tool.
   const appearance = await page.evaluate(() => {
     window.dressLabBodyShape.setShape({ head: 113, neck: 78, armWidth: 117 });
     window.dressLabSkinTone.setColor('#C68C73');
     window.dressLabWardrobe.setEquipped(false);
     return { shape: window.dressLabBodyShape.getState(), skin: window.dressLabSkinTone.getColor(),
-      outfit: window.dressLabWardrobe.equipped };
+      outfit: window.dressLabWardrobe.equipped, selected: window.DressLabCareRoom.selectedTool };
   });
   await page.getByRole('button', { name: '페이셜 케어 다시 시작', exact: true }).click();
   const reset = await state();
-  assert.equal(reset.stage, 'cleanser');
-  assert.equal(reset.completed, false);
-  assert.ok(reset.stages.every(stage => stage.progress === 0 && !stage.complete));
+  assert.ok(Object.values(reset.products).every(product => product.dots.length === 0 && product.phase === 'apply'));
   assert.deepEqual(await page.evaluate(() => ({ shape: window.dressLabBodyShape.getState(),
-    skin: window.dressLabSkinTone.getColor(), outfit: window.dressLabWardrobe.equipped })), appearance,
-  'Replay must leave appearance and outfit untouched');
+    skin: window.dressLabSkinTone.getColor(), outfit: window.dressLabWardrobe.equipped,
+    selected: window.DressLabCareRoom.selectedTool })), appearance,
+  'Reset must leave appearance, outfit and selected tool untouched');
+  assert.ok(['stage', 'stageIndex', 'progress', 'completed', 'stages'].every(key => !(key in reset)),
+    'There must be no global stage or completion state');
   await snapshot('facial-reset-mobile');
 
   await page.locator('[data-care-tab="hair"]').click();
@@ -226,9 +233,9 @@ async function snapshot(name) {
   assert.equal(await page.locator('[data-shelf-direction="1"]').isVisible(), false);
   assert.equal(await page.locator('[data-shelf-direction="-1"]').isVisible(), false);
   assert.deepEqual(errors, [], 'There must be no uncaught browser errors');
-  console.log('PASS: 5 real tool assets; three-slot native touch/keyboard shelf; wrong-tool/outside guards;');
-  console.log('transformed pointer care; partial/completed persistence; 5-stage keyboard completion;', presses);
-  console.log('replay preserves body/skin/outfit; other tabs keep three placeholders; no page errors.');
+  console.log('PASS: five real tool assets; three-slot touch/keyboard shelf; free tool choice;');
+  console.log('no progress/completion UI; recommendations do not change selection or scroll;');
+  console.log('three distinct dots before spreading; transformed pointer; persistence; isolated reset; no page errors.');
 })().catch(async error => {
   console.error(error);
   if (page) { try { await snapshot('facial-failure'); } catch (_) {} }
