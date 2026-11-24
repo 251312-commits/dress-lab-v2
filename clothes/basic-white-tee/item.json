@@ -23,23 +23,23 @@
       "id": "leftSleeve",
       "src": "left-sleeve.svg",
       "joint": "shoulderL",
-      "x": 151,
-      "y": 972
+      "x": 174,
+      "y": 973
     },
     {
       "id": "rightSleeve",
       "src": "right-sleeve.svg",
       "joint": "shoulderR",
-      "x": 367,
-      "y": 972
+      "x": 374,
+      "y": 973
     },
     {
       "id": "torso",
       "src": "torso.svg",
       "joint": "torso",
-      "x": 203,
-      "y": 954
+      "x": 219,
+      "y": 958
     }
   ],
-  "notes": "Fitted to the V2 doll in 1206×2622 coordinates. Long relaxed hem covers lower torso; cap sleeves hide under the front panel. Rig-animated shoulders and approximate body shape scaling."
+  "notes": "Fitted to the original V2 shoulder, bust, waist and upper-arm alpha outlines in 1206×2622 coordinates. The hem ends at y1248, above the pelvis starting at y1257. Full-width sleeves follow the original arm axis and retain a small fabric allowance."
 }

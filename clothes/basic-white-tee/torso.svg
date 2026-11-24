@@ -1,16 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="252" height="416" viewBox="203 954 252 416">
-<defs><linearGradient id="teeCotton" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#EEEEF1"/><stop offset=".17" stop-color="#FAFAFC"/><stop offset=".48" stop-color="#FFFFFF"/><stop offset=".77" stop-color="#F9F9FB"/><stop offset="1" stop-color="#E5E5E9"/></linearGradient></defs>
-<!-- One continuous front panel overlays the sleeves at the shoulder join. -->
-<path d="M291 983 C276 982 258 987 243 991 C231 1000 225 1022 223 1054 C219 1091 220 1138 225 1176 C229 1215 226 1252 220 1295 L214 1341 Q328 1362 443 1341 L437 1295 C431 1252 429 1215 433 1176 C438 1138 439 1091 435 1054 C433 1022 427 1000 415 991 C400 986 381 982 367 983 C357 1006 345 1017 329 1017 C312 1017 300 1006 291 983 Z" fill="url(#teeCotton)" stroke="#928D99" stroke-width="3.1" stroke-linejoin="round"/>
-<!-- Single restrained neckline ribbing. -->
-<path d="M289 984 C297 1007 312 1022 329 1022 C347 1022 360 1007 369 984" fill="none" stroke="#ACA8B2" stroke-width="10" stroke-linecap="round"/>
-<path d="M290 983 C300 1004 313 1015 329 1015 C345 1015 359 1004 368 983" fill="none" stroke="#FDFDFE" stroke-width="4.2" stroke-linecap="round"/>
-<path d="M247 1002 C257 1008 261 1018 262 1034" fill="none" stroke="#D1CDD4" stroke-width="2.7" opacity=".65" stroke-linecap="round"/>
-<path d="M412 1002 C402 1008 398 1018 397 1034" fill="none" stroke="#D1CDD4" stroke-width="2.7" opacity=".65" stroke-linecap="round"/>
-<!-- Low-contrast cotton drape with no intrusive chest lines. -->
-<path d="M237 1092 C249 1125 243 1155 240 1187" stroke="#D6D4DA" stroke-width="3.5" fill="none" opacity=".36" stroke-linecap="round"/>
-<path d="M420 1092 C410 1125 416 1155 419 1187" stroke="#D1CFD7" stroke-width="3.5" fill="none" opacity=".36" stroke-linecap="round"/>
-<path d="M277 1150 Q328 1160 379 1150" fill="none" stroke="#DDDBE2" stroke-width="3" opacity=".34" stroke-linecap="round"/>
-<path d="M271 1295 Q283 1320 277 1337 M386 1295 Q378 1320 383 1337" fill="none" stroke="#D6D4DD" stroke-width="3" opacity=".32" stroke-linecap="round"/>
-<path d="M216 1330 Q329 1350 441 1330" fill="none" stroke="#C7C4CD" stroke-width="2.7" opacity=".8"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="295" viewBox="219 958 220 295">
+<defs><linearGradient id="teeCotton" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#EDEBF0"/><stop offset=".18" stop-color="#FAFAFC"/><stop offset=".48" stop-color="#FFFFFF"/><stop offset=".78" stop-color="#FAFAFC"/><stop offset="1" stop-color="#E8E6EC"/></linearGradient></defs>
+<!-- Follows the original shoulder, bust and waist outlines; hem stops above the pelvis (y1257). -->
+<path d="M298 964 C284 971 258 975 241 980 C238 1002 239 1031 245 1052 C241 1065 239 1081 243 1096 C249 1114 254 1136 255 1153 C255 1173 247 1196 239 1217 L225 1242 Q329 1252 433 1242 L419 1217 C411 1196 403 1173 403 1153 C404 1136 409 1114 415 1096 C419 1081 417 1065 413 1052 C419 1031 420 1002 417 980 C400 975 374 971 360 964 C355 986 343 1001 329 1001 C315 1001 303 986 298 964 Z" fill="url(#teeCotton)" stroke="#928D99" stroke-width="3.1" stroke-linejoin="round"/>
+<path d="M298 965 C303 988 315 1004 329 1004 C343 1004 355 988 360 965" fill="none" stroke="#B1ACB8" stroke-width="7" stroke-linecap="round"/>
+<path d="M298 964 C304 985 316 999 329 999 C342 999 354 985 360 964" fill="none" stroke="#FDFDFE" stroke-width="3" stroke-linecap="round"/>
+<path d="M247 1000 C245 1015 246 1034 251 1047 M411 1000 C413 1015 412 1034 407 1047" fill="none" stroke="#D1CDD6" stroke-width="2.4" opacity=".65" stroke-linecap="round"/>
+<path d="M252 1070 C248 1087 254 1109 258 1122 M406 1070 C410 1087 404 1109 400 1122" fill="none" stroke="#D6D3DC" stroke-width="3" opacity=".45" stroke-linecap="round"/>
+<path d="M284 1117 Q329 1124 374 1117" fill="none" stroke="#DEDCE3" stroke-width="2.5" opacity=".45" stroke-linecap="round"/>
+<path d="M270 1197 Q280 1216 275 1234 M388 1197 Q378 1216 383 1234" fill="none" stroke="#D8D5DF" stroke-width="2.6" opacity=".4" stroke-linecap="round"/>
+<path d="M229 1233 Q329 1243 429 1233" fill="none" stroke="#C5C1CD" stroke-width="2.5" opacity=".85"/>
 </svg>
