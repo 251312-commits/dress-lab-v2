@@ -5,8 +5,22 @@ const handlers = new Map();
 const rafs = new Map();
 let counter=0, timer=0, draws=0, now=2000;
 const scales = [], paints = [];
+// Synthetic alpha fixtures match the eye assets' approximate silhouettes.
+function fixtureAlpha(path,x,y){
+ const ellipse=(cx,cy,rx,ry)=>((x-cx)/rx)**2+((y-cy)/ry)**2<=1;
+ if(path?.includes('Sclera'))return ellipse(91,73,59,46)||ellipse(275,73,59,46)?255:0;
+ if(path?.includes('Pupil'))return ellipse(105,71,40,40)||ellipse(261,71,40,40)?255:0;
+ if(path?.includes('Highlights'))return ellipse(109,40,9,11)||ellipse(257,40,9,11)?255:0;
+ return 0;
+}
 const ctx = () => ({
- drawImage(image){draws++;paints.push({image,alpha:this.globalAlpha})},
+ drawImage(image,...args){draws++;paints.push({image,args,alpha:this.globalAlpha,op:this.globalCompositeOperation,context:this});
+  if(image.path&&args.length===8)this.source=image.path;},
+ getImageData(x,y,w,h){
+  const data=new Uint8ClampedArray(w*h*4);
+  for(let j=0;j<h;j++)for(let i=0;i<w;i++)data[(j*w+i)*4+3]=fixtureAlpha(this.source,i+x+0.5,j+y+0.5);
+  return {data};
+ },
  save(){},restore(){},translate(){},scale(x,y){scales.push([x,y])},
  setTransform(){},clearRect(){},globalCompositeOperation:'source-over',globalAlpha:1
 });
@@ -19,7 +33,7 @@ const canvas={width:1206,height:2622,
 const rig={angles:{torso:0},root:{x:0,y:0,scaleX:1,scaleY:1},rootAnchor:{x:328.6,y:2050},
  config:{pivots:{torso:{x:328.6,y:1166.5}}},render(){ if(this.eyes)this.eyes.draw(ctx());}};
 const sandbox={window:{matchMedia:()=>({matches:false})},document:{hidden:false,
- createElement:()=>({width:0,height:0,getContext:()=>ctx()}),addEventListener(){},removeEventListener(){}},
+ createElement:()=>{const context=ctx();return {width:0,height:0,getContext:()=>context};},addEventListener(){},removeEventListener(){}},
  Image:FakeImage,performance:{now:()=>now},requestAnimationFrame:(fn)=>{rafs.set(++counter,fn);return counter},
  cancelAnimationFrame:(id)=>rafs.delete(id),setTimeout:()=>++timer,clearTimeout:()=>{},Math,console};
 vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../rig/eyes.js'),'utf8'),sandbox);
@@ -59,6 +73,7 @@ function settle(){
  assert.ok(Math.abs(scales[scales.length-1][1]-0.2)<1e-9);
  assert.ok(paints.some(p=>p.image===eyes.sprites.sclera&&p.alpha===1));
  assert.ok(paints.some(p=>p.image===eyes.irisBuffer&&p.alpha===1));
+ assert.ok(paints.some(p=>p.image===eyes.highlightBuffer&&p.alpha===1));
  frame(210);assert.ok(eyes.blinkValue<0,'Reopening should bounce past neutral');
  settle();assert.equal(eyes.blinkValue,0);assert.equal(eyes.x,targetX);assert.equal(eyes.y,targetY);
 
@@ -69,6 +84,42 @@ function settle(){
  assert.ok(left<0);assert.ok(up<0);
  handlers.get('pointercancel')({pointerId:2});
  settle();assert.equal(eyes.x,left);assert.equal(eyes.y,up);
+ // At all extreme gazes both glints must fit within the overlapping
+ // white and translated iris, rather than vanishing behind the eyelid.
+ for(const [nx,ny] of [[0,0],[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,1],[-1,1],[1,-1]]){
+  eyes.setGaze(nx,ny);settle();paints.length=0;eyes.layerKey=null;rig.render();
+  assert.equal(eyes.highlightPlacements.length,2);
+  for(let i=0;i<2;i++){
+   const place=eyes.highlightPlacements[i],pupil=eyes.eyeParts[i].pupil,white=eyes.eyeParts[i].sclera;
+   assert.ok(place&&place.scale>=0.85,'Glint should remain near original size');
+   assert.ok(Math.hypot(place.x-pupil.cx-eyes.x,place.y-pupil.cy-eyes.y)+place.radius<=40,
+    'Glint footprint outside iris');
+   for(let a=0;a<Math.PI*2;a+=Math.PI/12){
+    const x=place.x+Math.cos(a)*place.radius,y=place.y+Math.sin(a)*place.radius;
+    assert.ok(((x-white.cx)/59)**2+((y-white.cy)/46)**2<=1,'Glint footprint outside white');
+   }
+  }
+  assert.ok(paints.some(p=>p.context===eyes.irisContext&&p.image===eyes.sprites.sclera&&p.op==='destination-in'));
+  assert.ok(paints.some(p=>p.context===eyes.highlightContext&&p.image===eyes.irisBuffer&&p.op==='destination-in'));
+ }
+
+ // Full side-to-side turn: stronger recoil, independent highlight spring,
+ // horizontal stretch, and visible glints in every animation frame.
+ eyes.setGaze(-1,0);settle();
+ eyes.setGaze(1,0);
+ let peak=-Infinity,lag=0,rebound=0,stretched=false;
+ for(let i=0;i<180&&rafs.size;i++){
+  frame();paints.length=0;eyes.layerKey=null;rig.render();
+  peak=Math.max(peak,eyes.x);
+  lag=Math.max(lag,eyes.x-eyes.hx);rebound=Math.max(rebound,eyes.hx-eyes.x);
+  const draw=paints.find(p=>p.context===eyes.irisContext&&p.image===eyes.sprites.pupil);
+  if(draw&&Math.abs(draw.args[6]-draw.args[2])>3)stretched=true;
+  assert.ok(eyes.highlightPlacements.every(Boolean),'Both glints stay visible during sweep');
+ }
+ assert.ok(peak>eyes.targetX+4,'Horizontal recoil should be clearly visible');
+ assert.ok(lag>6&&rebound>3,'Catchlight should lag and rebound independently');
+ assert.ok(stretched,'Iris should stretch horizontally during sweep');
+ assert.equal(rafs.size,0);assert.equal(eyes.x,eyes.targetX);
  eyes.dispose();assert.equal(handlers.size,0);
- console.log('PASS: shape anchor, sticky gaze, hover/leave, elastic overshoot, 80% blink, rebound, drag/cancel, dispose');
+ console.log('PASS: sticky gaze, 80% blink, both glints fitted/masked at 9 gazes, horizontal overshoot, glint lag/recoil and stretch, dispose');
 })().catch(e=>{console.error(e);process.exitCode=1});
