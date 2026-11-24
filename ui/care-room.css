@@ -1,6 +1,5 @@
-/* Care Room: portrait sketch layout on the existing 1206 × 2622 artboard.
-   All measurements are artboard coordinates and scale with ui/layout.js.
-   These are UI placeholders, not yet connected to care-treatment mechanics. */
+/* Care Room: portrait layout on the existing 1206 × 2622 artboard.
+   All measurements are artboard coordinates and scale with ui/layout.js. */
 
 .ui-care-room {
   position: absolute;
@@ -126,6 +125,13 @@
   font-family: "Noto Serif KR", "AppleMyungjo", serif;
   pointer-events: none;
 }
+.ui-care-room[data-care-tab="facial"] .ui-care-dialog__text {
+  font-family: inherit;
+  font-size: 48px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 30px 65px;
+}
 
 /* Talk button floats beside the close-up character, as in the reference. */
 .ui-care-talk {
@@ -142,14 +148,20 @@
   pointer-events: auto;
 }
 .ui-care-talk:active { background: #e1ecee !important; }
+.ui-care-room[data-care-tab="facial"] .ui-care-talk {
+  font-family: inherit !important;
+  font-size: 43px !important;
+  white-space: nowrap;
+}
 
-/* Tools sit on the central shelf line; no invented treatment artwork. */
+/* Exactly three slots are visible. Overflow stays inside the shelf so swiping
+   tools cannot move the room or expose the doll below the white backing. */
 .ui-care-shelf {
   position: absolute;
   left: 0;
   top: 1977px;
   width: 1206px;
-  height: 288px;
+  height: 328px;
   pointer-events: none;
 }
 .ui-care-shelf__line {
@@ -161,11 +173,38 @@
 }
 .ui-care-tools {
   position: absolute;
-  inset: 0;
+  top: -15px;
+  left: 88px;
+  right: 88px;
+  height: 315px;
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  padding: 0 88px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  pointer-events: auto;
+  touch-action: pan-x;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ui-care-tools::-webkit-scrollbar { display: none; }
+.ui-care-tools.is-dragging {
+  scroll-snap-type: none;
+  cursor: grabbing;
+}
+.ui-care-tools.is-dragging .ui-care-tool { cursor: grabbing; }
+.ui-care-tool-slot {
+  flex: 0 0 calc(100% / 3);
+  min-width: 0;
+  height: 315px;
+  padding: 15px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  scroll-snap-align: start;
 }
 .ui-care-tool {
   width: 266px;
@@ -182,10 +221,142 @@
   place-items: center;
   pointer-events: auto;
 }
+.ui-care-room .ui-care-tool { touch-action: pan-x; }
 .ui-care-tool[aria-pressed="true"] {
   background: #bce6b7 !important;
   box-shadow: inset 0 0 0 8px #fff;
 }
+.ui-care-tool--illustrated {
+  width: 266px;
+  height: 286px;
+  padding: 0 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border: 0 !important;
+  border-radius: 20px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-family: inherit !important;
+  font-size: 35px !important;
+  font-weight: 650 !important;
+  letter-spacing: -.03em;
+}
+.ui-care-tool__art {
+  position: relative;
+  width: 218px;
+  height: 218px;
+  flex: 0 0 218px;
+  display: grid;
+  place-items: center;
+  background: #f4f7f1;
+  border: 5px solid #52645b;
+  border-radius: 50%;
+}
+.ui-care-tool__art img {
+  display: block;
+  width: 196px;
+  height: 196px;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.ui-care-tool--illustrated[aria-pressed="true"] .ui-care-tool__art {
+  background: #e5f2e9;
+  border-color: #427859;
+  box-shadow: 0 0 0 7px #fff, 0 0 0 12px #729e86;
+}
+.ui-care-tool--illustrated[aria-pressed="true"] {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.ui-care-tool--illustrated[data-current="true"] .ui-care-tool__label {
+  color: #32634a;
+}
+.ui-care-tool__label { line-height: 1.15; }
+.ui-care-tool__progress {
+  width: 155px;
+  height: 7px;
+  flex: 0 0 7px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #e7e9e4;
+}
+.ui-care-tool__progress > span {
+  display: block;
+  width: calc(var(--care-progress, 0) * 100%);
+  height: 100%;
+  border-radius: inherit;
+  background: #579272;
+}
+.ui-care-tool__done {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  width: 52px;
+  height: 52px;
+  display: none;
+  place-items: center;
+  color: #fff;
+  background: #4b8263;
+  border: 4px solid #fff;
+  border-radius: 50%;
+  font-size: 33px;
+  line-height: 1;
+}
+.ui-care-tool[data-complete="true"] .ui-care-tool__done { display: grid; }
+.ui-care-shelf-arrow {
+  position: absolute;
+  top: 57px;
+  width: 80px;
+  height: 150px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 35px !important;
+  background: rgba(255, 255, 255, .95) !important;
+  font-family: inherit !important;
+  font-size: 99px !important;
+  line-height: 1;
+  pointer-events: auto;
+}
+.ui-care-shelf-arrow--previous { left: 3px; }
+.ui-care-shelf-arrow--next { right: 3px; }
+.ui-care-shelf-arrow:disabled { opacity: .22; cursor: default; }
+.ui-care-shelf-pages {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 296px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  height: 31px;
+}
+.ui-care-shelf-pages button {
+  width: 62px;
+  height: 31px;
+  padding: 6px 12px;
+  display: grid;
+  place-items: center;
+  border: 0 !important;
+  background: transparent !important;
+}
+.ui-care-shelf-pages button span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ccd4ce;
+}
+.ui-care-shelf-pages button[aria-current="true"] span {
+  width: 36px;
+  border-radius: 12px;
+  background: #4b8263;
+}
+.ui-care-shelf [hidden] { display: none !important; }
 
 /* The four existing room buttons are preserved, merely given a neutral
    placeholder tint rather than the sketch's temporary blue button markup. */
@@ -197,7 +368,9 @@
 }
 .ui-care-tab:focus-visible,
 .ui-care-tool:focus-visible,
-.ui-care-talk:focus-visible {
+.ui-care-talk:focus-visible,
+.ui-care-shelf-arrow:focus-visible,
+.ui-care-shelf-pages button:focus-visible {
   outline: 7px solid #426e8f;
   outline-offset: 6px;
 }

@@ -1,0 +1,22 @@
+/* A transient tool follows the finger, in CSS screen coordinates. */
+.ui-facial-cursor {
+  position: absolute;
+  z-index: 4;
+  width: clamp(52px, 18vw, 88px);
+  height: clamp(52px, 18vw, 88px);
+  object-fit: contain;
+  transform: translate(-25%, -72%) rotate(-12deg);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  filter: drop-shadow(0 3px 2px #57465924);
+}
+.ui-facial-cursor[hidden] { display: none; }
+#character[data-facial-active="true"] { cursor: crosshair; }
+#character[data-facial-active="true"]:focus-visible {
+  outline: 3px solid #80a39b;
+  outline-offset: -4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-facial-cursor { transform: translate(-25%, -72%); }
+}

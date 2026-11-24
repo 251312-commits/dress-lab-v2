@@ -174,6 +174,8 @@
           ctx.translate(-x, -y);
         }
         ctx.drawImage(this.skinTone && isBodyPart ? this.skinTone.getImage(image) : image, x, y);
+        // Treatment stays on facial skin and below the independent eye layers.
+        if (filename === "01-Head.PNG" && this.facialCare) this.facialCare.draw(ctx);
         // Paint eyes above the head in the same root + torso coordinate space.
         // The eye controller also applies the jaw-anchored head-size transform.
         if (filename === "01-Head.PNG" && this.eyes) this.eyes.draw(ctx);
