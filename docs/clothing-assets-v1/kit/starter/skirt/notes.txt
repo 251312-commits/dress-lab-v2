@@ -1,0 +1,8 @@
+규격: dress-lab-clothing-png/v1
+의상 ID: my-skirt-01
+의상 이름: 여기에 이름을 적는다
+종류: skirt
+좌우 기준: 화면
+기본 변형: v1 기본값
+앞뒤 순서: v1 기본값
+예외: 없음

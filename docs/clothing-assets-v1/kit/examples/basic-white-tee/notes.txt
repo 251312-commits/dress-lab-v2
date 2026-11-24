@@ -1,0 +1,9 @@
+규격: dress-lab-clothing-png/v1
+의상 ID: basic-white-tee-example
+의상 이름: 기본 흰 반팔 — 전달 형식 예시
+종류: short-sleeve
+좌우 기준: 화면
+기본 변형: v1 기본값
+앞뒤 순서: v1 기본값
+예외: 없음
+비고: 현재 SVG 원화를 전체 크기 PNG로 옮긴 예시이다. 영역 지도는 제작 의도를 보여 주며 현재 로더가 자동 해석하지 않는다.

@@ -1,0 +1,14 @@
+{
+  "spec": "dress-lab-clothing-png/v1",
+  "canvas": [
+    1206,
+    2622
+  ],
+  "zones": {
+    "body": "#22C55E",
+    "preserve": "#3B82F6",
+    "transition": "#FACC15"
+  },
+  "attachment_guide_only": "#EF4444",
+  "side_convention": "screen-left=L, screen-right=R"
+}
