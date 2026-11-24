@@ -396,7 +396,142 @@
         x: originX, y: originY };
     }
 
-    // Affine limb deformation, defined in bone coordinates. The arm is
+    // Rasterize a continuous inverse map once per shape change. Sampling the
+    // destination avoids the cracks produced by separately transformed strips.
+    inverseSprite(base, bounds, inversePoint) {
+      const image = base.image;
+      const width = image.width || image.naturalWidth;
+      const height = image.height || image.naturalHeight;
+      const sourceX = base.x || 0, sourceY = base.y || 0;
+      if (!this.spritePixels) this.spritePixels = new WeakMap();
+      let source = this.spritePixels.get(image);
+      if (!source) {
+        const scratch = document.createElement("canvas");
+        scratch.width = width; scratch.height = height;
+        const ctx = scratch.getContext("2d", { willReadFrequently: true });
+        if (!ctx) throw new Error("Cannot sample limb image");
+        ctx.drawImage(image, 0, 0);
+        source = ctx.getImageData(0, 0, width, height).data;
+        this.spritePixels.set(image, source);
+      }
+      const left = Math.floor(bounds.left) - 2, top = Math.floor(bounds.top) - 2;
+      const target = document.createElement("canvas");
+      target.width = Math.max(1, Math.ceil(bounds.right) - left + 2);
+      target.height = Math.max(1, Math.ceil(bounds.bottom) - top + 2);
+      const ctx = target.getContext("2d");
+      if (!ctx) throw new Error("Cannot reshape limb image");
+      const result = ctx.createImageData(target.width, target.height);
+      const dst = result.data;
+      for (let y = 0; y < target.height; y++) {
+        for (let x = 0; x < target.width; x++) {
+          const point = inversePoint(left + x + 0.5, top + y + 0.5);
+          const sx = point[0] - sourceX - 0.5, sy = point[1] - sourceY - 0.5;
+          const ix = Math.floor(sx), iy = Math.floor(sy);
+          const fx = sx - ix, fy = sy - iy;
+          let alpha = 0, red = 0, green = 0, blue = 0;
+          for (let j = 0; j < 2; j++) {
+            const yy = iy + j;
+            if (yy < 0 || yy >= height) continue;
+            for (let i = 0; i < 2; i++) {
+              const xx = ix + i;
+              if (xx < 0 || xx >= width) continue;
+              const at = (yy * width + xx) * 4;
+              const weight = (i ? fx : 1 - fx) * (j ? fy : 1 - fy);
+              const a = source[at + 3] * weight;
+              alpha += a;
+              red += source[at] * a;
+              green += source[at + 1] * a;
+              blue += source[at + 2] * a;
+            }
+          }
+          if (alpha <= 0) continue;
+          const at = (y * target.width + x) * 4;
+          dst[at] = Math.round(red / alpha);
+          dst[at + 1] = Math.round(green / alpha);
+          dst[at + 2] = Math.round(blue / alpha);
+          dst[at + 3] = Math.round(alpha);
+        }
+      }
+      ctx.putImageData(result, 0, 0);
+      this.canvasesBuilt++;
+      return { ...base, image: target, x: left, y: top };
+    }
+
+    mappedSpriteBounds(base, forwardPoint) {
+      const x = base.x || 0, y = base.y || 0;
+      const width = base.image.width || base.image.naturalWidth;
+      const height = base.image.height || base.image.naturalHeight;
+      const bounds = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+      const include = (xx, yy) => {
+        const p = forwardPoint(xx, yy);
+        bounds.left = Math.min(bounds.left, p[0]);
+        bounds.right = Math.max(bounds.right, p[0]);
+        bounds.top = Math.min(bounds.top, p[1]);
+        bounds.bottom = Math.max(bounds.bottom, p[1]);
+      };
+      // These maps are continuous and one-to-one; their extrema lie on the
+      // boundary. Sample its curves, not just the four affine corners.
+      for (let i = 0; i <= width; i++) { include(x + i, y); include(x + i, y + height); }
+      for (let i = 0; i <= height; i++) { include(x, y + i); include(x + width, y + i); }
+      return bounds;
+    }
+
+    upperArmMapping(start, end, position) {
+      const dx = end.x - start.x, dy = end.y - start.y;
+      const length = Math.hypot(dx, dy);
+      if (!length) throw new Error("Cannot reshape a zero-length upper arm");
+      const ux = dx / length, uy = dy / length, vx = -uy, vy = ux;
+      const L = this.armLength / 100, W = this.armWidth / 100;
+      const blendEnd = length * 0.42;
+      // Keep the shoulder cap attached. Length/width reach their full values
+      // below the cap, before the sleeve cuff and well before the elbow.
+      const depthAt = t => t * (1 + (L - 1) * smoothstep(0, blendEnd, t));
+      const widthAt = t => 1 + (W - 1) * smoothstep(-length * 0.12, blendEnd, t);
+      // Invert the monotone transition once, rather than solve a polynomial
+      // for every output pixel. Quarter-pixel interpolation stays subpixel.
+      const steps = Math.ceil(blendEnd * L * 4);
+      const inverseDepth = new Float64Array(steps + 1);
+      for (let i = 0; i <= steps; i++) {
+        const target = i * blendEnd * L / steps;
+        let low = 0, high = blendEnd;
+        for (let j = 0; j < 22; j++) {
+          const mid = (low + high) / 2;
+          if (depthAt(mid) < target) low = mid; else high = mid;
+        }
+        inverseDepth[i] = (low + high) / 2;
+      }
+      const unmapDepth = value => {
+        if (value <= 0) return value;
+        if (value >= blendEnd * L) return value / L;
+        const p = value / (blendEnd * L) * steps, i = Math.floor(p), f = p - i;
+        return inverseDepth[i] * (1 - f) + inverseDepth[i + 1] * f;
+      };
+      return {
+        forward(x, y) {
+          const xx = x - start.x, yy = y - start.y;
+          const t = xx * ux + yy * uy, n = xx * vx + yy * vy;
+          const depth = depthAt(t), across = n * widthAt(t);
+          return [position.x + depth * ux + across * vx,
+            position.y + depth * uy + across * vy];
+        },
+        inverse(x, y) {
+          const xx = x - position.x, yy = y - position.y;
+          const t = unmapDepth(xx * ux + yy * uy);
+          const n = (xx * vx + yy * vy) / widthAt(t);
+          return [start.x + t * ux + n * vx, start.y + t * uy + n * vy];
+        }
+      };
+    }
+
+    transformUpperArm(base, start, end, position) {
+      if (this.armLength === 100 && this.armWidth === 100) {
+        return this.transformArm(base, start, end, position);
+      }
+      const map = this.upperArmMapping(start, end, position);
+      return this.inverseSprite(base, this.mappedSpriteBounds(base, map.forward), map.inverse);
+    }
+
+    // Affine limb deformation, defined in bone coordinates. The forearm is
     // lengthened ALONG the original shoulder-elbow/wrist axis and thickened
     // PERPENDICULAR to that axis. The source PNG and joint poses stay intact.
     // Position is the new start pivot after the parent's shoulder/arm motion.
@@ -453,10 +588,10 @@
     // its cuff inherits the arm-width scale. Beyond that narrow cuff, it
     // smoothly approaches the independent hand-size setting. This avoids a
     // visible gap when hands and forearms have different thickness settings.
-    // Each row is mapped in the forearm's local bone axes; the hand is never
+    // Each point is mapped in the forearm's local bone axes; the hand is never
     // stretched along the arm length a second time.
     transformHand(base, wrist, movedWrist, elbow) {
-      const { filename, image } = base;
+      const { image } = base;
       const sourceX = base.x || 0, sourceY = base.y || 0;
       const width = image.width || image.naturalWidth;
       const height = image.height || image.naturalHeight;
@@ -479,59 +614,62 @@
       const ux = dx / length, uy = dy / length;
       const vx = -uy, vy = ux;
 
-      // Measure depth along the forearm extension rather than screen Y; the
-      // two hands therefore stay symmetric even when forearms are slanted.
-      const depthRange = Math.max(20, Math.min(75, height * 0.7));
-      function transformRow(row) {
-        const xmid = sourceX + width / 2;
-        const ymid = sourceY + row + 0.5;
-        const depth = (xmid - wrist.x) * ux + (ymid - wrist.y) * uy;
-        const widthScale = armWidth + (size - armWidth) *
-          smoothstep(0, depthRange, Math.max(0, depth));
-        const a = size * ux * ux + widthScale * vx * vx;
-        const b = size * ux * uy + widthScale * vx * vy;
-        const c = size * uy * ux + widthScale * vx * vy;
-        const d = size * uy * uy + widthScale * vy * vy;
-        // The wrist source point maps exactly to the NEW wrist pivot.
-        const tx = movedWrist.x + a * (sourceX - wrist.x) + c * (sourceY - wrist.y);
-        const ty = movedWrist.y + b * (sourceX - wrist.x) + d * (sourceY - wrist.y);
-        return { a, b, c, d, tx, ty, widthScale };
-      }
+      // Use each point's actual depth along the forearm, not the midpoint of
+      // its screen row. Positive longitudinal/width scales make this mapping
+      // continuous and invertible, including the slanted wrist/palm junction.
+      const corners = [
+        [sourceX, sourceY], [sourceX + width, sourceY],
+        [sourceX + width, sourceY + height], [sourceX, sourceY + height]
+      ];
+      const local = ([x, y]) => [
+        (x - wrist.x) * ux + (y - wrist.y) * uy,
+        (x - wrist.x) * vx + (y - wrist.y) * vy
+      ];
+      const localCorners = corners.map(local);
+      const depthRange = Math.max(20, Math.min(75,
+        Math.max(...localCorners.map(point => point[0])) * 0.7));
+      const widthAt = depth => armWidth + (size - armWidth) *
+        smoothstep(0, depthRange, depth);
+      const forward = (x, y) => {
+        const [depth, lateral] = local([x, y]);
+        const across = lateral * widthAt(depth);
+        return [movedWrist.x + ux * depth * size + vx * across,
+          movedWrist.y + uy * depth * size + vy * across];
+      };
 
-      const transformed = [];
-      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-      for (let row = 0; row < height; row++) {
-        const m = transformRow(row);
-        transformed.push(m);
-        for (const [x, y] of [
-          [0, row], [width, row], [0, row + 1], [width, row + 1]
-        ]) {
-          const px = m.a * x + m.c * y + m.tx;
-          const py = m.b * x + m.d * y + m.ty;
-          left = Math.min(left, px);
-          right = Math.max(right, px);
-          top = Math.min(top, py);
-          bottom = Math.max(bottom, py);
+      // A bijection's rectangle extrema lie on its boundary. Sample all four
+      // edges and both transition depths; a Lipschitz bound supplies padding
+      // for extrema between samples, rather than clipping widened fingers.
+      const bounds = this.mappedSpriteBounds(base, forward);
+      const include = point => {
+        const [x, y] = forward(...point);
+        bounds.left = Math.min(bounds.left, x); bounds.right = Math.max(bounds.right, x);
+        bounds.top = Math.min(bounds.top, y); bounds.bottom = Math.max(bounds.bottom, y);
+      };
+      for (let edge = 0; edge < corners.length; edge++) {
+        const a = corners[edge], b = corners[(edge + 1) % corners.length];
+        const at = t => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+        const startDepth = localCorners[edge][0];
+        const span = localCorners[(edge + 1) % corners.length][0] - startDepth;
+        if (Math.abs(span) < 1e-8) continue;
+        for (const depth of [0, depthRange]) {
+          const t = (depth - startDepth) / span;
+          if (t > 0 && t < 1) include(at(t));
         }
       }
-      left = Math.floor(left) - 3;
-      top = Math.floor(top) - 3;
-      right = Math.ceil(right) + 3;
-      bottom = Math.ceil(bottom) + 3;
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, right - left);
-      canvas.height = Math.max(1, bottom - top);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Could not attach hand sprite");
-      ctx.imageSmoothingEnabled = true;
-      for (let row = 0; row < height; row++) {
-        const m = transformed[row];
-        ctx.setTransform(m.a, m.b, m.c, m.d, m.tx - left, m.ty - top);
-        ctx.drawImage(image, 0, row, width, 1, 0, row, width, 1);
-      }
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.canvasesBuilt++;
-      return { filename, image: canvas, x: left, y: top };
+      const maxLateral = Math.max(...localCorners.map(point => Math.abs(point[1])));
+      const derivativeBound = Math.max(size, armWidth) +
+        maxLateral * 1.5 * Math.abs(size - armWidth) / depthRange;
+      const padding = Math.ceil(derivativeBound * 0.5);
+      bounds.left -= padding; bounds.top -= padding;
+      bounds.right += padding; bounds.bottom += padding;
+      return this.inverseSprite(base, bounds, (x, y) => {
+        const dx = x - movedWrist.x, dy = y - movedWrist.y;
+        const depth = (dx * ux + dy * uy) / size;
+        const lateral = (dx * vx + dy * vy) / widthAt(depth);
+        return [wrist.x + ux * depth + vx * lateral,
+          wrist.y + uy * depth + vy * lateral];
+      });
     }
 
     // Bust is an independent overlay above UpperTorso. Resizing at this
@@ -896,7 +1034,9 @@
         ]) {
           const base = this.baseLayers.get(filename);
           if (!base) throw new Error("Missing arm image: " + filename);
-          output.set(filename, this.transformArm(base, begin, end, destination));
+          output.set(filename, filename === upperName
+            ? this.transformUpperArm(base, begin, end, destination)
+            : this.transformArm(base, begin, end, destination));
         }
 
         const handName = side === "L" ? "16-hand(L).PNG" : "17-Hand(R).PNG";

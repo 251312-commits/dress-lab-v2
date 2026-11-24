@@ -4,7 +4,7 @@
 (() => {
   "use strict";
   const BASE = "./clothes/basic-white-tee/";
-  const VERSION = "white-tee-contour-v3";
+  const VERSION = "white-tee-anchored-cap-v4";
   const TORSO_FILES = new Set([
     "03-Bust.PNG", "06-UpperTorso.PNG", "07-LowerTorso.PNG", "08-TorsoJoint.PNG"
   ]);
@@ -165,7 +165,7 @@
     fitParts() {
       const shape = window.dressLabBodyShape;
       if (!shape?.baseLayers || !shape.basePivots ||
-          typeof shape.transformArm !== "function" ||
+          typeof shape.transformUpperArm !== "function" ||
           typeof shape.warpRatioLayer !== "function") return this.parts;
       const state = shape.getState();
       const key = SHAPE_KEYS.map(key => state[key]).join(",");
@@ -192,11 +192,11 @@
           const side = part.joint === "shoulderL" ? "L" : "R";
           const start = shape.basePivots[part.joint];
           const end = shape.basePivots["elbow" + side];
-          // Body-shape first moves the shoulder horizontally, then stretches
-          // along/across the bone, then applies the vertical ratio mapping.
-          // Reuse those same two transforms, in that same order.
+          // Share the body's anchored shoulder-cap map. A full affine stretch
+          // also lengthens pixels above the pivot and detaches the seam.
+          // Apply the torso/leg ratio only after the shared arm mapping.
           const position = { x: this.rig.config.pivots[part.joint].x, y: start.y };
-          fitted = { ...part, ...shape.transformArm(part, start, end, position) };
+          fitted = { ...part, ...shape.transformUpperArm(part, start, end, position) };
         }
         return { ...part, ...shape.warpRatioLayer(fitted) };
       });
