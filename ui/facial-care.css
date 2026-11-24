@@ -1,4 +1,5 @@
-/* A transient tool follows the finger, in CSS screen coordinates. */
+/* Only a tool picked up from the shelf follows the pointer. Bare-hand
+   rubbing uses the face directly and never displays a selected tool sprite. */
 .ui-facial-cursor {
   position: absolute;
   z-index: 4;

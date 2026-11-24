@@ -8,7 +8,8 @@
   const facialTools = [
     ["cleanser", "클렌저"], ["towel", "물수건"], ["serum", "세럼"],
     ["cream", "크림"], ["roller", "롤러"]
-  ].map(([id, label]) => ({ id, label, image: "./assets/care/facial/" + id + ".png" }));
+  ].map(([id, label]) => ({ id, label,
+    image: "./assets/care/facial/" + (id === "roller" ? "roller-v2" : id) + ".png" }));
   const placeholders = ["1", "2", "3"].map(id => ({ id, label: "도구 " + id }));
   const initialFacialState = window.DressLabFacialCare?.getState?.() || null;
   const initialFacialTool = facialTools.some(tool => tool.id === initialFacialState?.selectedTool)
@@ -25,6 +26,10 @@
   careRoom.className = "ui-care-room";
   careRoom.setAttribute("aria-label", "케어룸 작업 화면");
   careRoom.innerHTML = [
+    '<div class="ui-facial-overall" role="progressbar" aria-label="페이셜 전체 케어" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0%" hidden>',
+      '<span class="ui-facial-overall__track" aria-hidden="true"><span class="ui-facial-overall__fill"></span></span>',
+      '<span class="ui-facial-overall__value" aria-hidden="true">0%</span>',
+    '</div>',
     '<nav class="ui-care-tabs" aria-label="케어 종류">',
       tabs.map(([key, label], index) => '<button type="button" class="ui-care-tab" data-care-tab="' + key +
         '" aria-pressed="' + (index === 0) + '">' + label + '</button>').join(""),
@@ -47,6 +52,8 @@
   scene.appendChild(careRoom);
 
   const status = document.getElementById("ui-selection-status");
+  const overall = careRoom.querySelector(".ui-facial-overall");
+  const overallValue = careRoom.querySelector(".ui-facial-overall__value");
   const dialogBubble = careRoom.querySelector(".ui-care-dialog");
   const dialog = careRoom.querySelector("#ui-care-dialog-text");
   const talk = careRoom.querySelector("#ui-care-talk");
@@ -103,6 +110,16 @@
       button.setAttribute("aria-label", tool.label + (selectedTab === "facial" ? "" : " · 준비 중"));
     });
   }
+  function syncOverall() {
+    const value = Number.isFinite(facialState?.overallProgress)
+      ? Math.max(0, Math.min(1, facialState.overallProgress)) : 0;
+    const percent = Math.round(value * 100);
+    overall.style.setProperty("--facial-progress", value);
+    overall.setAttribute("aria-valuenow", String(percent));
+    overall.setAttribute("aria-valuetext", percent + "%");
+    overallValue.textContent = percent + "%";
+    overall.hidden = selectedTab !== "facial";
+  }
   function syncDialog() {
     const isFacial = selectedTab === "facial";
     careRoom.dataset.careTab = selectedTab;
@@ -111,6 +128,7 @@
     talk.setAttribute("aria-label", isFacial ? "페이셜 케어 다시 시작" : "케어 안내 보기");
     const message = isFacial ? "" : dialogueOpen ? "대화 기능 준비 중" : "대화창";
     if (dialog.textContent !== message) dialog.textContent = message;
+    syncOverall();
   }
   function renderTools() {
     const tools = currentTools();
@@ -153,6 +171,7 @@
   }
   function setCareTab(key) {
     if (!tabs.some(([id]) => id === key)) return false;
+    finishGesture(null, true);
     if (selectedTab !== key) {
       if (viewport.clientWidth > 0) scrollByTab.set(selectedTab, viewport.scrollLeft);
       selectedTab = key;
@@ -168,11 +187,23 @@
   }
 
   viewport.addEventListener("scroll", updateShelfControls, { passive: true });
-  viewport.addEventListener("focusin", event => revealTool(event.target.closest(".ui-care-tool")));
+  viewport.addEventListener("focusin", event => {
+    if (!drag) revealTool(event.target.closest(".ui-care-tool"));
+  });
   viewport.addEventListener("keydown", event => {
     const buttons = Array.from(viewport.querySelectorAll(".ui-care-tool"));
     const index = buttons.indexOf(event.target);
     if (index < 0) return;
+    if (selectedTab === "facial" && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      if (!event.repeat) {
+        finishGesture(null, true);
+        const tool = buttons[index].dataset.careTool;
+        setCareTool(tool, { reveal: false });
+        window.dispatchEvent(new CustomEvent("dresslab:facial-tool-key", { detail: { tool } }));
+      }
+      return;
+    }
     let target;
     if (event.key === "ArrowRight") target = Math.min(buttons.length - 1, index + 1);
     else if (event.key === "ArrowLeft") target = Math.max(0, index - 1);
@@ -180,45 +211,101 @@
     else if (event.key === "End") target = buttons.length - 1;
     else return;
     event.preventDefault();
+    finishGesture(null, true);
     buttons[target].focus({ preventScroll: true });
     revealTool(buttons[target]);
   });
-  // Touch uses native momentum scrolling. Mouse dragging needs coordinates
-  // converted back through the artboard scale (client pixels ≠ shelf pixels).
-  viewport.addEventListener("pointerdown", event => {
-    if (event.pointerType !== "mouse" || event.button !== 0 || maxScroll() <= 1) return;
-    drag = { id: event.pointerId, x: event.clientX, left: viewport.scrollLeft, moved: false,
-      scale: viewport.getBoundingClientRect().width / viewport.clientWidth || 1 };
+  viewport.addEventListener("keyup", event => {
+    if (selectedTab === "facial" && (event.key === "Enter" || event.key === " ") &&
+        event.target.closest(".ui-care-tool")) event.preventDefault();
   });
-  viewport.addEventListener("pointermove", event => {
+  viewport.addEventListener("dragstart", event => event.preventDefault());
+  careRoom.addEventListener("pointerdown", () => { suppressClickUntil = 0; }, true);
+
+  function emitToolDrag(gesture, phase, event) {
+    window.dispatchEvent(new CustomEvent("dresslab:facial-tool-drag", {
+      detail: { phase, tool: gesture.tool, pointerId: gesture.id,
+        clientX: Number.isFinite(event?.clientX) ? event.clientX : gesture.lastX,
+        clientY: Number.isFinite(event?.clientY) ? event.clientY : gesture.lastY }
+    }));
+  }
+  function capturePointer(pointerId) {
+    try { viewport.setPointerCapture(pointerId); } catch (_) { /* Window listeners remain available. */ }
+  }
+  // A facial gesture chooses one axis after 8 screen pixels. Horizontal pans
+  // never become treatment strokes; vertical tool drags stay captured to us.
+  viewport.addEventListener("pointerdown", event => {
+    if (drag || event.isPrimary === false || (event.button !== undefined && event.button !== 0)) return;
+    const facial = selectedTab === "facial";
+    if (!facial && (event.pointerType !== "mouse" || maxScroll() <= 1)) return;
+    const button = event.target.closest(".ui-care-tool");
+    drag = { id: event.pointerId, facial, tool: facial ? button?.dataset.careTool : null,
+      x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY,
+      left: viewport.scrollLeft, axis: null,
+      scale: viewport.getBoundingClientRect().width / viewport.clientWidth || 1 };
+    if (facial) {
+      viewport.classList.add("is-gesturing");
+      capturePointer(event.pointerId);
+    }
+  });
+  window.addEventListener("pointermove", event => {
     if (!drag || drag.id !== event.pointerId) return;
-    const delta = event.clientX - drag.x;
-    if (!drag.moved && Math.abs(delta) < 6) return;
-    if (!drag.moved) {
-      drag.moved = true;
-      viewport.classList.add("is-dragging");
-      viewport.setPointerCapture(event.pointerId);
+    drag.lastX = event.clientX;
+    drag.lastY = event.clientY;
+    const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+    if (!drag.axis) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < (drag.facial ? 8 : 6)) return;
+      drag.axis = !drag.facial || Math.abs(dx) >= Math.abs(dy) ? "pan" : drag.tool ? "tool" : "ignore";
+      if (drag.axis === "pan") {
+        viewport.classList.add("is-dragging");
+        capturePointer(event.pointerId);
+      } else if (drag.axis === "tool") {
+        viewport.classList.add("is-tool-dragging");
+        setCareTool(drag.tool, { reveal: false });
+        event.preventDefault();
+        emitToolDrag(drag, "start", event);
+        return;
+      }
     }
     event.preventDefault();
-    viewport.scrollLeft = drag.left - delta / drag.scale;
-  });
-  function finishDrag(event) {
-    if (!drag || drag.id !== event.pointerId) return;
-    const moved = drag.moved;
+    if (drag.axis === "pan") viewport.scrollLeft = drag.left - dx / drag.scale;
+    else if (drag.axis === "tool") emitToolDrag(drag, "move", event);
+  }, { passive: false });
+  function finishGesture(event, cancelled = false) {
+    if (!drag || (event && drag.id !== event.pointerId)) return;
+    const gesture = drag;
     drag = null;
-    viewport.classList.remove("is-dragging");
-    if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
-    if (moved) {
-      suppressClickUntil = performance.now() + 350;
+    viewport.classList.remove("is-gesturing", "is-dragging", "is-tool-dragging");
+    try {
+      if (viewport.hasPointerCapture(gesture.id)) viewport.releasePointerCapture(gesture.id);
+    } catch (_) { /* A browser may already have cancelled the capture. */ }
+    if (gesture.axis === "tool") emitToolDrag(gesture, cancelled ? "cancel" : "end", event);
+    else if (!cancelled && gesture.facial && !gesture.axis && gesture.tool &&
+        Math.hypot((event?.clientX ?? gesture.lastX) - gesture.x,
+          (event?.clientY ?? gesture.lastY) - gesture.y) < 8) {
+      // Captured pointer taps may target the shelf instead of its button.
+      setCareTool(gesture.tool, { reveal: false });
+    }
+    if (gesture.facial || gesture.axis || cancelled) suppressClickUntil = performance.now() + 400;
+    if (gesture.axis === "pan" && viewport.clientWidth > 0) {
       const slotWidth = viewport.clientWidth / 3;
-      scrollShelf(Math.round(viewport.scrollLeft / slotWidth) * slotWidth);
+      scrollShelf(Math.round(viewport.scrollLeft / slotWidth) * slotWidth, !cancelled);
     }
   }
-  viewport.addEventListener("pointerup", finishDrag);
-  viewport.addEventListener("pointercancel", finishDrag);
-  viewport.addEventListener("lostpointercapture", finishDrag);
-  viewport.addEventListener("pointerleave", event => { if (drag && !drag.moved) finishDrag(event); });
-  viewport.addEventListener("click", event => {
+  window.addEventListener("pointerup", event => finishGesture(event));
+  window.addEventListener("pointercancel", event => finishGesture(event, true));
+  viewport.addEventListener("lostpointercapture", event => {
+    if (event.target === viewport) finishGesture(event, true);
+  });
+  viewport.addEventListener("pointerleave", event => {
+    if (drag && !drag.facial && !drag.axis) finishGesture(event, true);
+  });
+  window.addEventListener("blur", () => finishGesture(null, true));
+  window.addEventListener("pagehide", () => finishGesture(null, true));
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) finishGesture(null, true);
+  });
+  careRoom.addEventListener("click", event => {
     if (performance.now() < suppressClickUntil && event.detail !== 0) {
       event.preventDefault();
       event.stopPropagation();
@@ -230,6 +317,7 @@
     if (tab) return void setCareTab(tab.dataset.careTab);
     const arrow = event.target.closest("[data-shelf-direction]");
     if (arrow) {
+      finishGesture(null, true);
       const offsets = pageOffsets();
       const index = Math.max(0, Math.min(offsets.length - 1,
         currentPage() + Number(arrow.dataset.shelfDirection)));
@@ -237,12 +325,14 @@
     }
     const tool = event.target.closest(".ui-care-tool");
     if (tool) {
+      finishGesture(null, true);
       const id = tool.dataset.careTool;
       setCareTool(selectedTab !== "facial" && selectionByTab.get(selectedTab) === id ? null : id);
       return;
     }
     if (event.target.closest("#ui-care-talk")) {
       if (selectedTab === "facial") {
+        finishGesture(null, true);
         window.dispatchEvent(new CustomEvent("dresslab:facial-reset"));
       } else {
         dialogueOpen = !dialogueOpen;
@@ -256,10 +346,17 @@
     // in response to treatment state; the user's selection stays in place.
     if (selectedTab === "facial") {
       syncToolSelection();
+      syncOverall();
     }
   });
-  window.addEventListener("dresslab:room-change", () => requestAnimationFrame(updateShelfControls));
-  window.addEventListener("resize", updateShelfControls);
+  window.addEventListener("dresslab:room-change", () => {
+    finishGesture(null, true);
+    requestAnimationFrame(updateShelfControls);
+  });
+  window.addEventListener("resize", () => {
+    finishGesture(null, true);
+    updateShelfControls();
+  });
   if ("ResizeObserver" in window) new ResizeObserver(updateShelfControls).observe(viewport);
   renderTools();
   syncDialog();

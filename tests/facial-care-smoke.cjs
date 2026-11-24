@@ -9,7 +9,7 @@ const source = fs.readFileSync(path.join(root, 'ui/facial-care.js'), 'utf8');
 const rigSource = fs.readFileSync(path.join(root, 'rig/rig.js'), 'utf8');
 const config = JSON.parse(fs.readFileSync(path.join(root, 'rig/rig.json'), 'utf8'));
 const tools = ['cleanser', 'towel', 'serum', 'cream', 'roller'];
-const STORE = 'dresslab-v2:facial-care:v2';
+const STORE = 'dresslab-v2:facial-care:v3';
 
 class Target {
   constructor() { this.handlers = new Map(); this.attributes = {}; this.dataset = {}; this.style = {}; }
@@ -29,7 +29,7 @@ class Target {
 }
 const plain = value => JSON.parse(JSON.stringify(value));
 const signature = state => plain({ products: state.products, dirt: state.dirt,
-  hydration: state.hydration, massage: state.massage });
+  hydration: state.hydration, massage: state.massage, overallProgress: state.overallProgress });
 const sum = values => values.reduce((total, value) => total + value, 0);
 const material = product => sum(product.dots.map(dot => dot.amount)) + sum(product.film);
 const noStages = state => ['stage', 'stageIndex', 'stages', 'progress', 'completed']
@@ -130,152 +130,190 @@ function setup({ storage = new Map(), blockedStorage = false, rect, shape: chang
     points.slice(1).forEach(point => pointer('pointermove', point, {}, elapsed));
     pointer('pointerup', points.at(-1), {}, elapsed);
   }
+  function toolEvent(phase, tool, point, elapsed = 80) {
+    advance(elapsed);
+    const screen = client(point);
+    window.dispatchEvent({ type: 'dresslab:facial-tool-drag', detail: {
+      phase, tool, pointerId: 91, clientX: screen.x, clientY: screen.y
+    } });
+  }
+  function toolTap(tool, point) { toolEvent('start', tool, point); toolEvent('end', tool, point); }
+  function toolStroke(tool, points, elapsed = 80) {
+    toolEvent('start', tool, points[0], elapsed);
+    points.slice(1).forEach(point => toolEvent('move', tool, point, elapsed));
+    toolEvent('end', tool, points.at(-1), elapsed);
+  }
+  function toolKey(tool) {
+    advance(); window.dispatchEvent({ type: 'dresslab:facial-tool-key', detail: { tool } });
+  }
   function flush() {
     const callbacks = [...rafs.values()]; rafs.clear();
     callbacks.forEach(fn => fn(now));
   }
   return { window, document, canvas, care, rig, shape, storage, key, pointer, client,
-    advance, tap, stroke, published, completion, selections, flush, rafs, paints: () => paints };
+    advance, tap, stroke, toolEvent, toolTap, toolStroke, toolKey,
+    published, completion, selections, flush, rafs, paints: () => paints };
 }
 
-// Free order: roller and towel work immediately; recommendations never take
-// over the tool selection, even if another product would usually be used first.
+// Selecting a tool does not make the bare finger an applicator. Direct taps,
+// strokes and keyboard input on an empty face cannot deposit or use a roller.
 const h = setup();
 const empty = signature(h.care.getState());
+const point = { x: 260, y: 620 };
+const shortPath = [point, { x: 280, y: 620 }, point, { x: 280, y: 620 }];
 noStages(h.care.getState());
+assert.equal(h.care.getState().overallProgress, 0);
+for (const id of tools) {
+  h.window.DressLabCareRoom.setTool(id);
+  h.tap(point);
+  h.stroke(shortPath);
+  h.key();
+  assert.deepEqual(signature(h.care.getState()), empty, 'Selection alone must not operate ' + id);
+}
+
+// Towel and roller remain freely usable, but only when actually picked up.
 h.window.DressLabCareRoom.setTool('roller');
 let userSelections = h.selections.length;
-h.stroke([{ x: 260, y: 620 }, { x: 290, y: 630 }, { x: 325, y: 640 }, { x: 370, y: 660 }]);
-assert.ok(sum(h.care.getState().massage) > sum(empty.massage), 'Roller must work before any product');
+h.toolStroke('roller', shortPath);
+assert.ok(sum(h.care.getState().massage) > 0, 'Dragged roller must work before products');
+assert.ok(h.care.getState().overallProgress > 0);
 assert.equal(h.care.getState().selectedTool, 'roller');
-assert.equal(h.window.DressLabCareRoom.selectedTool, 'roller');
-assert.equal(h.selections.length, userSelections, 'Working must not emit a tool-selection event');
+assert.equal(h.selections.length, userSelections);
+h.care.reset();
 h.window.DressLabCareRoom.setTool('towel');
 const dusty = sum(h.care.getState().dirt);
-h.stroke([{ x: 260, y: 620 }, { x: 290, y: 630 }, { x: 325, y: 640 }, { x: 370, y: 660 }]);
-assert.ok(sum(h.care.getState().dirt) < dusty, 'Towel must work without waiting for cleanser');
-assert.equal(h.care.getState().selectedTool, 'towel');
+h.toolStroke('towel', [point, { x: 290, y: 630 }, { x: 325, y: 640 }, { x: 370, y: 660 }]);
+assert.ok(sum(h.care.getState().dirt) < dusty, 'Dragged towel must clean independently');
+assert.ok(h.care.getState().overallProgress > 0);
 h.care.reset();
 assert.deepEqual(signature(h.care.getState()), empty);
-assert.equal(h.care.getState().selectedTool, 'towel', 'Reset must preserve selection');
+assert.equal(h.care.getState().selectedTool, 'towel', 'Reset must preserve selected tool');
 
-// Inactive, secondary, eye and outside-face contacts must not deposit product.
-h.window.DressLabCareRoom.setTool('serum');
-for (const p of [{ x: 75, y: 720 }, { x: 237, y: 800 }, { x: 422, y: 800 }]) {
-  h.tap(p);
+// Unlimited application: neither repeated placement nor a single long drag
+// stops at three doses. Coalescing nearby dots is allowed; total mass must grow.
+h.window.DressLabCareRoom.setTool('cleanser');
+for (let index = 1; index <= 8; index++) {
+  h.toolTap('cleanser', point);
+  assert.ok(Math.abs(material(h.care.getState().products.cleanser) - index) < 1e-6,
+    'Every repeated application must add a dose beyond three');
 }
-h.pointer('pointerdown', { x: 329, y: 650 }, { button: 2 });
-h.pointer('pointerdown', { x: 329, y: 650 }, { isPrimary: false, pointerId: 2 });
-h.key('Enter', true);
-assert.deepEqual(signature(h.care.getState()), empty);
+assert.equal(sum(h.care.getState().products.cleanser.film), 0);
+assert.equal(h.care.getState().overallProgress, 0, 'Depositing alone must not fill the work bar');
+h.care.reset();
+const locations = [{ x: 220, y: 610 }, { x: 300, y: 565 }, { x: 405, y: 620 },
+  { x: 185, y: 700 }, { x: 329, y: 720 }, { x: 470, y: 700 }];
+locations.forEach(location => h.toolTap('cleanser', location));
+assert.ok(h.care.getState().products.cleanser.dots.length > 3, 'Distinct applications must exceed three dots');
+h.care.reset();
+const applicationPath = [];
+for (let lap = 0; lap < 2; lap++) {
+  for (let x = 220; x <= 440; x += 22) applicationPath.push({ x, y: 620 });
+  for (let x = 440; x >= 220; x -= 22) applicationPath.push({ x, y: 700 });
+}
+h.toolStroke('cleanser', applicationPath, 100);
+assert.ok(material(h.care.getState().products.cleanser) > 3, 'One applicator drag must lay multiple doses');
+assert.equal(sum(h.care.getState().products.cleanser.film), 0, 'Application must not also rub product');
+assert.equal(h.care.getState().overallProgress, 0);
 
-// Actual installed pointer handlers deposit three contacts before spreading.
-// A held drag, including the third contact, cannot both deposit and spread.
-const points = [{ x: 260, y: 620 }, { x: 405, y: 650 }, { x: 329, y: 880 }];
+// Rub immediately after one dose with bare fingers, despite a different
+// selected tool. No dragged-tool cursor, extra deposition or auto-selection.
+h.care.reset();
+h.toolTap('cleanser', point);
+h.window.DressLabCareRoom.setTool('roller');
 userSelections = h.selections.length;
-h.stroke([points[0], { x: 300, y: 630 }, { x: 350, y: 650 }]);
-let serum = h.care.getState().products.serum;
-assert.equal(serum.dots.length, 1);
-assert.equal(serum.phase, 'apply');
-assert.equal(sum(serum.film), 0);
-h.tap(points[1]);
-serum = h.care.getState().products.serum;
-assert.equal(serum.dots.length, 2);
-assert.equal(serum.phase, 'apply');
-assert.equal(sum(serum.film), 0);
-h.stroke([points[2], { x: 329, y: 865 }, { x: 345, y: 875 }]);
-serum = h.care.getState().products.serum;
-assert.equal(serum.dots.length, 3);
-assert.equal(serum.phase, 'spread');
-assert.equal(sum(serum.film), 0, 'Third deposition drag must not spread');
-const depositedMass = material(serum);
-assert.ok(depositedMass > 0);
-assert.equal(h.care.getState().selectedTool, 'serum');
+h.pointer('pointerdown', point);
+assert.equal(h.care.cursor.hidden, true, 'Bare contact must not display an applicator');
+for (const position of shortPath.slice(1)) {
+  h.pointer('pointermove', position);
+  assert.equal(h.care.cursor.hidden, true);
+}
+h.pointer('pointerup', shortPath.at(-1));
+let cleanser = h.care.getState().products.cleanser;
+assert.ok(sum(cleanser.film) >= .20, 'Short .24s rub must visibly respond faster than the former .36/sec rate');
+assert.ok(Math.abs(material(cleanser) - 1) < 1e-6, 'Bare rubbing must conserve the single dose');
+assert.equal(h.care.getState().selectedTool, 'roller');
+assert.equal(h.window.DressLabCareRoom.selectedTool, 'roller');
 assert.equal(h.selections.length, userSelections);
-const dotted = signature(h.care.getState());
+assert.equal(sum(h.care.getState().massage), 0, 'Selected roller must not act during bare rubbing');
+assert.deepEqual(plain(h.care.getState().dirt), empty.dirt);
+assert.ok(h.care.getState().overallProgress > 0);
 
-// Separate taps at the same spot still count; there is no invisible spacing gate.
-const overlapping = setup();
-for (let i = 0; i < 3; i++) overlapping.tap({ x: 329, y: 650 });
-assert.equal(overlapping.care.getState().products.cleanser.dots.length, 3);
-assert.equal(overlapping.care.getState().products.cleanser.phase, 'spread');
+// Bare rubbing works on every nearby material, including cleanser/serum/cream
+// mixed together. Absorption is accounted for explicitly in hydration.
+const mixed = setup();
+for (const id of ['cleanser', 'serum', 'cream']) {
+  mixed.window.DressLabCareRoom.setTool(id);
+  mixed.toolTap(id, point);
+}
+mixed.window.DressLabCareRoom.setTool('towel');
+userSelections = mixed.selections.length;
+mixed.stroke(shortPath);
+const mixedState = mixed.care.getState();
+for (const id of ['cleanser', 'serum', 'cream']) {
+  assert.ok(sum(mixedState.products[id].film) > 0, 'Bare finger must spread mixed ' + id);
+  assert.ok(mixedState.products[id].work > 0);
+}
+assert.ok(Math.abs(material(mixedState.products.cleanser) - 1) < 1e-6);
+assert.ok(Math.abs(material(mixedState.products.serum) + material(mixedState.products.cream) +
+  mixedState.products.serum.absorbed + mixedState.products.cream.absorbed - 2) < 1e-6,
+  'Serum/cream must remain or be explicitly recorded as absorbed');
+assert.equal(sum(mixedState.massage), 0);
+assert.deepEqual(plain(mixedState.dirt), empty.dirt);
+assert.equal(mixedState.selectedTool, 'towel');
+assert.equal(mixed.selections.length, userSelections);
+assert.equal(mixed.care.cursor.hidden, true);
 
-// Stationary/repeated events and rubbing far from product cannot create film.
-h.pointer('pointerdown', points[0]);
-for (let i = 0; i < 15; i++) h.pointer('pointermove', points[0], {}, 500);
-h.pointer('pointerup', points[0]);
-assert.deepEqual(signature(h.care.getState()), dotted, 'Time without movement must not spread');
-h.stroke([{ x: 330, y: 555 }, { x: 350, y: 555 }, { x: 365, y: 570 }]);
-assert.equal(sum(h.care.getState().products.serum.film), 0, 'Empty-face rubbing cannot invent product');
-
-// Spreading moves finite material from a deposited dot to nearby skin slowly.
-h.stroke([points[0], { x: 275, y: 620 }, { x: 290, y: 625 }, { x: 310, y: 635 }]);
-serum = h.care.getState().products.serum;
-assert.ok(sum(serum.film) > 0, 'A later rub near a dot must spread its material');
-assert.ok(serum.dots.some(dot => dot.amount > 0), 'One short rub must leave unspread product');
-assert.ok(Math.abs(material(serum) + sum(h.care.getState().hydration) / 2.2 - depositedMass) < 1e-6,
-  'Serum material must remain on the face or become measured hydration');
-assert.equal(h.care.getState().selectedTool, 'serum');
-assert.equal(h.selections.length, userSelections);
-
-// Equal geometric paths over different durations should not award the same
-// amount of work per event. Long waits are capped, and motion stays gradual.
+// Zero movement, eye/outside contacts and rubbing away from material do not
+// create product or work. Pauses do not become a large jump on the next move.
+const stationary = setup();
+stationary.toolTap('cleanser', point);
+const dotted = signature(stationary.care.getState());
+stationary.pointer('pointerdown', point);
+for (let i = 0; i < 15; i++) stationary.pointer('pointermove', point, {}, 500);
+stationary.pointer('pointerup', point);
+assert.deepEqual(signature(stationary.care.getState()), dotted);
+for (const p of [{ x: 75, y: 720 }, { x: 237, y: 800 }, { x: 422, y: 800 }]) stationary.tap(p);
+stationary.pointer('pointerdown', point, { button: 2 });
+stationary.pointer('pointerdown', point, { isPrimary: false, pointerId: 2 });
+stationary.key('Enter', true);
+stationary.stroke([{ x: 365, y: 565 }, { x: 385, y: 585 }, { x: 410, y: 610 }]);
+assert.deepEqual(signature(stationary.care.getState()), dotted, 'Empty face rubbing must not invent work');
 function timedRub(elapsed) {
-  const item = setup();
-  item.window.DressLabCareRoom.setTool('cream');
-  points.forEach(point => item.tap(point));
-  item.stroke([points[0], { x: 269, y: 620 }, { x: 278, y: 621 },
+  const item = setup(); item.toolTap('cleanser', point);
+  item.stroke([point, { x: 269, y: 620 }, { x: 278, y: 621 },
     { x: 287, y: 622 }, { x: 296, y: 623 }, { x: 305, y: 624 }], elapsed);
-  return item.care.getState().products.cream;
+  return item.care.getState().products.cleanser;
 }
 const quick = timedRub(5), slow = timedRub(80), paused = timedRub(2000);
-assert.ok(slow.work > quick.work * 2, 'Spreading must depend on elapsed time, not event count');
-assert.ok(sum(slow.film) > sum(quick.film), 'A slower real rub must transfer more material');
-assert.ok(paused.work <= slow.work * 1.1, 'A paused pointer must not earn seconds of free work');
+assert.ok(slow.work > quick.work * 2);
+assert.ok(sum(slow.film) > sum(quick.film));
+assert.ok(paused.work <= slow.work * 1.1, 'Paused input must be capped');
 assert.ok(slow.dots.some(dot => dot.amount > 0));
 
-// Cleanser does not absorb. Its dot+film amount must be conserved exactly,
-// including material temporarily carried by the pointer at cancellation.
-const cleanser = setup();
-points.forEach(point => cleanser.tap(point));
-const cleanserMass = material(cleanser.care.getState().products.cleanser);
-cleanser.pointer('pointerdown', points[0]);
-cleanser.pointer('pointermove', { x: 280, y: 625 });
-cleanser.pointer('pointermove', { x: 300, y: 630 });
-cleanser.pointer('pointercancel', { x: 300, y: 630 });
-assert.ok(Math.abs(material(cleanser.care.getState().products.cleanser) - cleanserMass) < 1e-6,
-  'Cleanser spreading/cancellation must conserve all material');
-assert.equal(sum(cleanser.care.getState().hydration), 0);
-
-// High-frequency gentle movement can be smaller than one CSS pixel per
-// event. Preserve .1/.2 px movement while still rejecting zero movement.
-// Each variant covers the same 10 CSS px in 500 ms with a different event
-// count; neither sample count nor interpolation may multiply work or material.
+// Preserve .1/.2 CSS px movement and frequency-independent work/mass.
 function gentleRub(cssStep) {
-  const item = setup();
-  points.forEach(point => item.tap(point));
-  const start = points[0], screen = item.client(start);
-  const cssPerSourcePixel = item.client({ x: start.x + 1, y: start.y }).x - screen.x;
+  const item = setup(); item.toolTap('cleanser', point);
+  const screen = item.client(point);
+  const cssPerSourcePixel = item.client({ x: point.x + 1, y: point.y }).x - screen.x;
   const samples = Math.round(10 / cssStep);
-  item.pointer('pointerdown', start);
+  item.pointer('pointerdown', point);
   for (let index = 1; index <= samples; index++) {
-    item.pointer('pointermove', { x: start.x + index * cssStep / cssPerSourcePixel,
-      y: start.y }, {}, 500 / samples);
+    item.pointer('pointermove', { x: point.x + index * cssStep / cssPerSourcePixel,
+      y: point.y }, {}, 500 / samples);
   }
-  item.pointer('pointerup', { x: start.x + 10 / cssPerSourcePixel, y: start.y });
+  item.pointer('pointerup', { x: point.x + 10 / cssPerSourcePixel, y: point.y });
   return item.care.getState().products.cleanser;
 }
 const finePointOne = gentleRub(.1), finePointTwo = gentleRub(.2), coarse = gentleRub(1);
 for (const product of [finePointOne, finePointTwo, coarse]) {
-  assert.ok(sum(product.film) > 0, 'Subpixel movement must spread real product');
-  assert.ok(Math.abs(material(product) - cleanserMass) < 1e-6,
-    'Changing event frequency must not create or lose cleanser');
-  assert.ok(Math.abs(product.work - coarse.work) < 1e-8,
-    'Equal paths at equal duration must not gain work from more pointer events');
+  assert.ok(sum(product.film) > 0);
+  assert.ok(Math.abs(material(product) - 1) < 1e-6);
+  assert.ok(Math.abs(product.work - coarse.work) < 1e-8);
 }
 
-// Coordinate inverse follows the actual torso pivot, head/neck extremes,
-// nonuniform root scale/translation and scaled/translated CSS canvas bounds.
+// Coordinate inverse and actual applicator placement follow head/neck extremes,
+// changed torso pivots, root scale/translation and CSS canvas scaling.
+h.window.DressLabCareRoom.setTool('serum');
 for (const setting of [
   { head: 70, neck: 127, torso: -12, x: -29, y: 33, scaleX: .97, scaleY: 1.03, torsoY: 1190 },
   { head: 113, neck: 78, torso: 12, x: 35, y: -42, scaleX: 1.03, scaleY: .97, torsoY: 1140 },
@@ -285,22 +323,20 @@ for (const setting of [
   h.rig.angles.torso = setting.torso;
   h.rig.config.pivots.torso.y = setting.torsoY;
   h.rig.root = { x: setting.x, y: setting.y, scaleX: setting.scaleX, scaleY: setting.scaleY };
-  for (const point of [{ x: 329, y: 650 }, { x: 220, y: 700 }, { x: 420, y: 620 }, { x: 329, y: 890 }]) {
-    const screen = h.client(point), inverse = h.care.clientToFace(screen.x, screen.y);
-    assert.ok(Math.hypot(inverse.x - point.x, inverse.y - point.y) < 1e-7, 'Inverse transform drift');
+  for (const p of [{ x: 329, y: 650 }, { x: 220, y: 700 }, { x: 420, y: 620 }, { x: 329, y: 890 }]) {
+    const screen = h.client(p), inverse = h.care.clientToFace(screen.x, screen.y);
+    assert.ok(Math.hypot(inverse.x - p.x, inverse.y - p.y) < 1e-7, 'Inverse transform drift');
   }
   h.care.reset();
-  h.tap({ x: 329, y: 650 });
+  h.toolTap('serum', { x: 329, y: 650 });
   const dot = h.care.getState().products.serum.dots[0];
-  assert.ok(dot && Math.hypot(dot.x - 329, dot.y - 650) < 1e-7,
-    'Transformed contact must deposit at the original source location');
+  assert.ok(dot && Math.hypot(dot.x - 329, dot.y - 650) < 1e-7);
 }
 
-// Cancellation flushes carried material without losing mass or keeping input
-// active. Room/tab/visibility changes do the same and preserve tool selection.
-h.care.reset();
-points.forEach(point => h.tap(point));
-h.pointer('pointerdown', points[0]);
+// Cancellation returns carried mixed material, stops further input and hides
+// the tool cursor. Cancelling application must also prevent further deposits.
+h.care.reset(); h.toolTap('serum', point);
+h.pointer('pointerdown', point);
 h.pointer('pointermove', { x: 280, y: 625 });
 h.pointer('pointercancel', { x: 280, y: 625 });
 const cancelled = signature(h.care.getState());
@@ -309,55 +345,107 @@ assert.deepEqual(signature(h.care.getState()), cancelled);
 assert.equal(h.care.pointerId, null);
 assert.equal(h.care.cursor.hidden, true);
 assert.ok(Math.abs(material(h.care.getState().products.serum) +
-  sum(h.care.getState().hydration) / 2.2 - depositedMass) < 1e-6,
-  'Cancellation must return carried material instead of losing it');
+  h.care.getState().products.serum.absorbed - 1) < 1e-6);
+h.toolEvent('start', 'serum', point);
+h.toolEvent('cancel', 'serum', point);
+const cancelledTool = signature(h.care.getState());
+h.toolEvent('move', 'serum', { x: 400, y: 650 });
+assert.deepEqual(signature(h.care.getState()), cancelledTool);
+assert.equal(h.care.cursor.hidden, true);
+
+// Room/tab transitions disable both direct and dragged input without losing
+// materials, work or the user's selection.
 h.window.DressLabRooms.setRoom('dress');
-h.key();
-assert.deepEqual(signature(h.care.getState()), cancelled);
+h.key(); h.toolStroke('cream', shortPath);
+assert.deepEqual(signature(h.care.getState()), cancelledTool);
 assert.equal(h.canvas.getAttribute('role'), 'img');
 assert.equal(h.canvas.getAttribute('aria-label'), '원래 인형');
 h.window.DressLabRooms.setRoom('care');
 h.window.DressLabCareRoom.setTab('relaxation');
-h.key();
-assert.deepEqual(signature(h.care.getState()), cancelled);
+h.key(); h.toolKey('cream');
+assert.deepEqual(signature(h.care.getState()), cancelledTool);
 h.window.DressLabCareRoom.setTab('facial');
 assert.equal(h.care.getState().selectedTool, 'serum');
-assert.equal(h.window.DressLabCareRoom.selectedTool, 'serum');
 
-// Snapshot independence and v2 persistence for deposits, film and skin state.
+// V3 snapshots and saved progress are independent copies. Migrate valid V2
+// material state without restoring the obsolete three-dose workflow.
 const beforeSnapshotMutation = signature(h.care.getState());
 const snapshot = h.care.getState();
 snapshot.products.serum.dots[0].amount = 999;
 snapshot.products.serum.film[0] = 999;
-assert.deepEqual(signature(h.care.getState()), beforeSnapshotMutation, 'Snapshots must be immutable copies');
+assert.deepEqual(signature(h.care.getState()), beforeSnapshotMutation);
 const restored = setup({ storage: h.storage });
 assert.deepEqual(signature(restored.care.getState()), beforeSnapshotMutation);
 assert.equal(restored.completion.length, 0);
-assert.ok(restored.published.length > 0);
 restored.published.forEach(noStages);
+const savedV3 = JSON.parse(h.storage.get(STORE));
+const savedV2 = { ...savedV3, version: 2, rollerWork: 0 };
+delete savedV2.careWork;
+savedV2.products = Object.fromEntries(Object.entries(savedV2.products).map(([id, product]) =>
+  [id, { dots: product.dots, film: product.film, work: product.work }]));
+const migrationStore = new Map([['dresslab-v2:facial-care:v2', JSON.stringify(savedV2)]]);
+const migrated = setup({ storage: migrationStore });
+for (const id of ['cleanser', 'serum', 'cream']) {
+  const product = migrated.care.getState().products[id];
+  assert.deepEqual(plain({ dots: product.dots, film: product.film, work: product.work }), savedV2.products[id]);
+  assert.equal(product.absorbed, 0, 'V2 has no prior absorption counter');
+}
+migrated.window.DressLabCareRoom.setTool('cleanser');
+for (let i = 0; i < 5; i++) migrated.toolKey('cleanser');
+assert.ok(material(migrated.care.getState().products.cleanser) > 3);
+assert.equal(JSON.parse(migrationStore.get(STORE)).version, 3);
 
-// Enter/Space retain an accessible way to deposit, then rub incrementally.
-restored.window.DressLabCareRoom.setTool('cleanser');
-userSelections = restored.selections.length;
-for (const key of ['Enter', ' ', 'Enter']) restored.key(key);
-assert.equal(restored.care.getState().products.cleanser.dots.length, 3);
-assert.equal(sum(restored.care.getState().products.cleanser.film), 0);
-restored.key(' ');
-assert.ok(sum(restored.care.getState().products.cleanser.film) > 0);
-assert.equal(restored.care.getState().selectedTool, 'cleanser');
-assert.equal(restored.selections.length, userSelections);
-assert.equal(restored.completion.length, 0);
+// Tool keys apply/use the chosen tool; canvas keys only rub what exists.
+const accessible = setup();
+accessible.key();
+assert.deepEqual(signature(accessible.care.getState()), empty);
+for (let i = 0; i < 6; i++) accessible.toolKey('cleanser');
+assert.ok(Math.abs(material(accessible.care.getState().products.cleanser) - 6) < 1e-6);
+assert.equal(accessible.care.getState().overallProgress, 0);
+userSelections = accessible.selections.length;
+accessible.key(' ');
+assert.ok(sum(accessible.care.getState().products.cleanser.film) > 0);
+assert.ok(Math.abs(material(accessible.care.getState().products.cleanser) - 6) < 1e-6);
+assert.equal(accessible.care.cursor.hidden, true);
+assert.equal(accessible.selections.length, userSelections);
 
-// Wiping is local and gradual, rather than erasing the whole product at once.
+// Wiping a mixed face removes nearby material gradually, and the overall bar
+// reflects real care instead of deposits. A full bar never locks free play.
 restored.window.DressLabCareRoom.setTool('towel');
 const beforeWipe = material(restored.care.getState().products.serum);
-restored.stroke([points[0], { x: 275, y: 620 }, { x: 290, y: 625 }]);
+restored.toolStroke('towel', [point, { x: 275, y: 620 }, { x: 290, y: 625 }]);
 const afterWipe = material(restored.care.getState().products.serum);
-assert.ok(afterWipe < beforeWipe && afterWipe > 0, 'Towel should remove only some nearby material');
-assert.equal(restored.care.getState().selectedTool, 'towel');
+assert.ok(afterWipe < beforeWipe && afterWipe > 0);
+const fullSave = JSON.parse(h.storage.get(STORE));
+fullSave.careWork = Object.fromEntries(tools.map(id => [id, 120]));
+fullSave.hydration.fill(1);
+const full = setup({ storage: new Map([[STORE, JSON.stringify(fullSave)]]) });
+assert.equal(full.care.getState().overallProgress, 1);
+const atFull = material(full.care.getState().products.cream);
+full.toolTap('cream', point);
+assert.ok(material(full.care.getState().products.cream) > atFull, 'Full bar must not block further application');
+full.stroke(shortPath);
+const saturatedCream = full.care.getState().products.cream;
+assert.ok(saturatedCream.absorbed > 0, 'Absorption counter must record material even after skin hydration saturates');
+assert.ok(Math.abs(material(saturatedCream) + saturatedCream.absorbed - atFull - 1) < 1e-6);
+assert.ok(full.care.getState().hydration.every(value => value === 1));
+assert.equal(full.care.getState().overallProgress, 1);
+noStages(full.care.getState());
+assert.equal(full.completion.length, 0);
 
-// Reset through the UI event leaves all separate appearance state and the
-// currently selected tool alone. It emits no completion or tool-change event.
+// Keyboard towel must find unspread dots at arbitrary source positions,
+// even when the face has no dirt/film and the dot misses preset keyboard spots.
+const cleanFixture = setup(); cleanFixture.care.reset();
+const arbitraryDotSave = JSON.parse(cleanFixture.storage.get(STORE));
+arbitraryDotSave.dirt.fill(0);
+arbitraryDotSave.products.serum.dots = [{ x: 345, y: 705, amount: 1 }];
+const arbitraryWipe = setup({ storage: new Map([[STORE, JSON.stringify(arbitraryDotSave)]]) });
+arbitraryWipe.toolKey('towel');
+const wipedDot = material(arbitraryWipe.care.getState().products.serum);
+assert.ok(wipedDot > 0 && wipedDot < 1, 'Keyboard towel must target and gradually wipe an arbitrary live dot');
+assert.ok(arbitraryWipe.care.getState().overallProgress > 0);
+
+// Reset leaves appearance, selected tool and unrelated state untouched.
 restored.rig.skinTone = { hex: '#C68C73' };
 restored.rig.wardrobe = { equipped: false };
 restored.rig.eyes = { targetX: 12, targetY: -7 };
@@ -373,24 +461,34 @@ assert.deepEqual(plain({ shape: restored.shape, skin: restored.rig.skinTone,
   wardrobe: restored.rig.wardrobe, eyes: restored.rig.eyes }), appearance);
 assert.deepEqual(signature(setup({ storage: h.storage }).care.getState()), empty);
 
-// Old v1 completion cannot recreate forced stages. Invalid or blocked v2
-// storage must not crash or grant material; the current session remains usable.
 const old = new Map([['dresslab-v2:facial-care:v1', JSON.stringify({ version: 1,
   coverage: Array.from({ length: 5 }, () => Array(100).fill(1)) })]]);
 assert.deepEqual(signature(setup({ storage: old }).care.getState()), empty);
-for (const value of ['{broken', 'null', '{"version":999}', '{"version":2,"products":{}}']) {
-  const candidate = setup({ storage: new Map([[STORE, value]]) });
-  assert.deepEqual(signature(candidate.care.getState()), empty);
+for (const value of ['{broken', 'null', '{"version":999}', '{"version":3,"products":{}}']) {
+  assert.deepEqual(signature(setup({ storage: new Map([[STORE, value]]) }).care.getState()), empty);
+}
+// V3 requires a valid absorption counter; V2 migration above accepts absence.
+for (const amount of [undefined, null, -1]) {
+  const invalidCounter = structuredClone(arbitraryDotSave);
+  if (amount === undefined) delete invalidCounter.products.serum.absorbed;
+  else invalidCounter.products.serum.absorbed = amount;
+  assert.deepEqual(signature(setup({ storage: new Map([[STORE, JSON.stringify(invalidCounter)]]) }).care.getState()), empty);
 }
 const blocked = setup({ blockedStorage: true });
-blocked.key();
-assert.equal(blocked.care.getState().products.cleanser.dots.length, 1);
+blocked.toolKey('cleanser');
+assert.ok(material(blocked.care.getState().products.cleanser) > 0);
 blocked.care.reset();
 assert.deepEqual(signature(blocked.care.getState()), empty);
-assert.equal(blocked.rafs.size, 1, 'Repaints should be coalesced');
+assert.equal(blocked.rafs.size, 1);
 blocked.flush();
-assert.equal(blocked.rafs.size, 0, 'Reduced-motion mode needs no perpetual RAF');
+assert.equal(blocked.rafs.size, 0);
 assert.equal(blocked.paints(), 1);
+
+// Source-level UI contract only; this does not claim DOM/layout verification.
+const uiSource = fs.readFileSync(path.join(root, 'ui/care-room.js'), 'utf8');
+assert.ok(uiSource.includes('ui-facial-overall'));
+assert.equal((uiSource.match(/role="progressbar"/g) || []).length, 1);
+assert.ok(!/ui-care-tool__(?:done|progress)/.test(uiSource), 'No per-tool completion or progress markup');
 
 // Exercise the actual rig's drawing order, not a source-text assertion.
 const draws = [], context = { save() {}, restore() {}, setTransform() {}, clearRect() {},
@@ -407,7 +505,7 @@ draws.length = 0;
 rig.render();
 assert.deepEqual(draws, ['hand', 'head', 'care', 'eyes'], 'Care must be between head and eyes');
 
-console.log('PASS: free tool order; three deposits before gradual spreading; conserved finite material;');
-console.log('time/distance response; no automatic selection or stage/completion state; transformed input;');
-console.log('cancel/room/tab isolation; v2 persistence and v1 rejection; local wiping; keyboard support;');
-console.log('appearance-preserving reset; blocked storage; coalesced rendering; head→care→eyes ordering.');
+console.log('PASS: unlimited dragged applications; selection-only taps; bare-finger mixed spreading;');
+console.log('tool-only towel/roller; accelerated, time-aware, subpixel-safe work; finite mass/absorption;');
+console.log('overall progress from real work with no lock; cancellation/transforms; v3 persistence/v2 migration;');
+console.log('keyboard split, no auto-selection, appearance-safe reset, storage fallback and head→care→eyes.');
