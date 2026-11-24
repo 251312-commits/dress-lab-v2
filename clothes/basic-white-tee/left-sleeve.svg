@@ -1,19 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="134" height="162" viewBox="148 978 134 162">
-  <defs>
-    <linearGradient id="cotton" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#E8E8ED"/><stop offset=".22" stop-color="#FBFBFD"/>
-      <stop offset=".50" stop-color="#FFFFFF"/><stop offset=".79" stop-color="#F5F5F8"/>
-      <stop offset="1" stop-color="#DADBE2"/>
-    </linearGradient>
-    <linearGradient id="shadow" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#E2E1E6" stop-opacity=".1"/>
-      <stop offset="1" stop-color="#9CA0AF" stop-opacity=".3"/>
-    </linearGradient>
-  </defs>
-  <path d="M251 990 C228 992 210 1002 196 1025 C181 1048 174 1077 168 1105 Q180 1118 201 1122 C207 1097 220 1081 235 1057 Q250 1032 270 1016 Z"
-    fill="url(#cotton)" stroke="#9994A1" stroke-width="3.3" stroke-linejoin="round"/>
-  <path d="M170 1101 Q185 1111 202 1118" fill="none" stroke="#ADABB7" stroke-width="5.5" stroke-linecap="round"/>
-  <path d="M180 1095 Q189 1101 205 1107" fill="none" stroke="#F9F9FC" stroke-width="3"/>
-  <path d="M229 1013 Q204 1046 202 1078" fill="none" stroke="#BFC0CB" stroke-width="4" opacity=".55"/>
-  <path d="M250 995 Q244 1027 228 1044" fill="none" stroke="#FFFFFF" stroke-width="7" opacity=".85"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="139" height="169" viewBox="151 972 139 169">
+<defs><linearGradient id="teeCotton" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#EEEEF1"/><stop offset=".17" stop-color="#FAFAFC"/><stop offset=".48" stop-color="#FFFFFF"/><stop offset=".77" stop-color="#F9F9FB"/><stop offset="1" stop-color="#E5E5E9"/></linearGradient></defs>
+<!-- Sleeve cap under the front body. The open seam prevents doubled borders. -->
+<path d="M254 989 C230 992 211 1003 197 1028 C184 1051 174 1080 165 1110 Q179 1122 198 1125 C206 1093 219 1070 235 1046 C246 1028 260 1017 273 1012 Z" fill="url(#teeCotton)"/>
+<path d="M254 989 C230 992 211 1003 197 1028 C184 1051 174 1080 165 1110 Q179 1122 198 1125 C206 1093 219 1070 235 1046" fill="none" stroke="#928D99" stroke-width="3.1" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M169 1103 Q183 1116 200 1118" fill="none" stroke="#BBB7C2" stroke-width="5" opacity=".85" stroke-linecap="round"/>
+<path d="M181 1068 Q191 1041 210 1023" fill="none" stroke="#D4D2DA" stroke-width="4" opacity=".33" stroke-linecap="round"/>
 </svg>

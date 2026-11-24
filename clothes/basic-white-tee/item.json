@@ -23,23 +23,23 @@
       "id": "leftSleeve",
       "src": "left-sleeve.svg",
       "joint": "shoulderL",
-      "x": 148,
-      "y": 978
+      "x": 151,
+      "y": 972
     },
     {
       "id": "rightSleeve",
       "src": "right-sleeve.svg",
       "joint": "shoulderR",
-      "x": 375,
-      "y": 978
+      "x": 367,
+      "y": 972
     },
     {
       "id": "torso",
       "src": "torso.svg",
       "joint": "torso",
-      "x": 215,
-      "y": 955
+      "x": 203,
+      "y": 954
     }
   ],
-  "notes": "Original transparent SVG garment art. Sleeves rotate with shoulder joints; torso follows upper-body motion and approximate body proportions."
+  "notes": "Fitted to the V2 doll in 1206×2622 coordinates. Long relaxed hem covers lower torso; cap sleeves hide under the front panel. Rig-animated shoulders and approximate body shape scaling."
 }

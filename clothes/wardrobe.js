@@ -22,7 +22,7 @@
     }
 
     async load() {
-      const response = await fetch(BASE + "item.json");
+      const response = await fetch(BASE + "item.json?v=white-tee-fit-v2");
       if (!response.ok) throw new Error("의상 데이터 로드 실패: HTTP " + response.status);
       const item = await response.json();
       if (item.canvas?.width !== this.rig.canvas.width ||
@@ -34,7 +34,7 @@
         if (!["shoulderL","shoulderR","torso"].includes(part.joint)) throw new Error("Unknown clothing joint");
         const image = new Image();
         image.decoding = "async";
-        const path = BASE + encodeURIComponent(part.src);
+        const path = BASE + encodeURIComponent(part.src) + "?v=white-tee-fit-v2";
         await new Promise((resolve,reject) => {
           image.onload = resolve;
           image.onerror = () => reject(new Error("의상 이미지 로드 실패: " + part.src));

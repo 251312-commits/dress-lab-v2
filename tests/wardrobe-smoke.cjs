@@ -11,6 +11,14 @@ for (const part of item.parts) {
   const svg=fs.readFileSync(path.join(dir,part.src),"utf8");
   assert.match(svg,/<svg\b/);
   assert.match(svg,/viewBox=/);
+  const width = /width="(\\d+)"/.exec(svg);
+  const height = /height="(\\d+)"/.exec(svg);
+  const box = /viewBox="(\\d+) (\\d+) (\\d+) (\\d+)"/.exec(svg);
+  assert.ok(width && height && box, "Explicit SVG sprite dimensions required");
+  assert.equal(Number(box[1]), part.x, "Sprite left must match manifest");
+  assert.equal(Number(box[2]), part.y, "Sprite top must match manifest");
+  assert.equal(Number(box[3]), Number(width[1]), "Sprite width and viewBox mismatch");
+  assert.equal(Number(box[4]), Number(height[1]), "Sprite height and viewBox mismatch");
   assert.doesNotMatch(svg,/<rect[^>]+(?:fill="white"|fill="#fff")/i, "No opaque background");
 }
 const index=fs.readFileSync(path.join(root,"index.html"),"utf8");

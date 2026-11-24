@@ -91,7 +91,7 @@
           '<svg class="ui-preview__icon" viewBox="0 0 64 64" aria-hidden="true">',
             '<use id="ui-preview-use" href="#dl2-shirt"></use>',
           '</svg>',
-          '<img id="ui-shirt-preview" class="ui-preview__shirt" src="./clothes/basic-white-tee/preview.svg" alt="" aria-hidden="true">',
+          '<img id="ui-shirt-preview" class="ui-preview__shirt" src="./clothes/basic-white-tee/preview.svg?v=white-tee-fit-v2" alt="" aria-hidden="true">',
           '<button type="button" class="ui-preview__check" id="ui-preview-check" aria-label="베이직 화이트 반팔 셔츠 착용 전환" aria-pressed="false">',
             '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M11 33 L26 48 L53 13"/></svg>',
           '</button>',
