@@ -10,6 +10,12 @@ Created for Dress Lab V2 with the built-in image generation tool on 2026-11-24. 
 - `cream.png`
 - `roller.png`
 
+## Roller delivery revision
+
+`roller-v2.png` is a lossless delivery copy of `roller.png`, re-encoded as a conventional RGBA PNG under a new URL. Dimensions (1254 × 1254), decoded RGB pixels and alpha are exactly identical to the generated original. The original file is retained above with its generation metadata. The delivery copy contains only standard image chunks; it does not change the artwork.
+
+The original local and GitHub-main files were byte-identical, passed PNG chunk CRC validation, and decoded successfully. No truncated upload was found. The revised filename allows the shelf and pointer tool to request fresh image bytes; the user's previous browser-side image failure could not be reproduced from the file alone.
+
 ## Prompts
 
 ### cleanser
