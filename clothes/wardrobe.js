@@ -1,14 +1,23 @@
-/* V2 first wearable outfit: original lightweight SVG art in native 1206x2622 coordinates.
- * Three transparent files; no skin-tone transformation; no modifications to base PNGs.
+/* V2 wearable separates: original SVG art in native 1206x2622 coordinates.
+ * Garments keep their own pixels and follow the body's shape and joint maps.
  */
 (() => {
   "use strict";
   const BASE = "./clothes/basic-white-tee/";
-  const VERSION = "white-tee-anchored-cap-v4";
+  const PANTS_BASE = "./clothes/basic-charcoal-pants/";
+  const TEE_ID = "basic-white-tee";
+  const PANTS_ID = "basic-charcoal-pants";
+  const VERSION = "separates-pants-v1";
   const TORSO_FILES = new Set([
     "03-Bust.PNG", "06-UpperTorso.PNG", "07-LowerTorso.PNG", "08-TorsoJoint.PNG"
   ]);
   const SHAPE_KEYS = ["upperTorso", "bust", "waist", "hips", "armWidth", "armLength", "ratio"];
+  const PANTS_SHAPE_KEYS = ["waist", "hips", "thighs", "calves", "ratio"];
+  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+  const smootherstep = value => {
+    const t = clamp(value, 0, 1);
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  };
 
   class DressLabWardrobe {
     constructor(rig) {
@@ -20,23 +29,29 @@
       this.item = null;
       this.fitKey = null;
       this.fittedParts = [];
+      this.pants = { ready: false, equipped: false, item: null, parts: [],
+        fitKey: null, fittedParts: [] };
+      this.loadErrors = {};
       rig.wardrobe = this;
     }
 
-    async load() {
-      const response = await fetch(BASE + "item.json?v=" + VERSION);
+    async loadGarment(base, id, joints, count) {
+      const response = await fetch(base + "item.json?v=" + VERSION);
       if (!response.ok) throw new Error("의상 데이터 로드 실패: HTTP " + response.status);
       const item = await response.json();
-      if (item.canvas?.width !== this.rig.canvas.width ||
+      if (item.id !== id || item.canvas?.width !== this.rig.canvas.width ||
           item.canvas?.height !== this.rig.canvas.height ||
-          !Array.isArray(item.parts) || item.parts.length !== 3) {
+          !Array.isArray(item.parts) || item.parts.length !== count) {
         throw new Error("의상 파츠 데이터가 V2 리그와 맞지 않음");
       }
       const parts = await Promise.all(item.parts.map(async (part) => {
-        if (!["shoulderL","shoulderR","torso"].includes(part.joint)) throw new Error("Unknown clothing joint");
+        if (!joints.includes(part.joint) || !Number.isFinite(part.x) ||
+            !Number.isFinite(part.y) || !/^[a-z0-9-]+\.(svg|png)$/i.test(part.src)) {
+          throw new Error("Invalid clothing part: " + part.id);
+        }
         const image = new Image();
         image.decoding = "async";
-        const path = BASE + encodeURIComponent(part.src) + "?v=" + VERSION;
+        const path = base + encodeURIComponent(part.src) + "?v=" + VERSION;
         await new Promise((resolve,reject) => {
           image.onload = resolve;
           image.onerror = () => reject(new Error("의상 이미지 로드 실패: " + part.src));
@@ -45,28 +60,61 @@
         if (!image.naturalWidth || !image.naturalHeight) throw new Error("Empty outfit image");
         return { ...part, image };
       }));
-      this.parts = parts;
-      this.item = item;
-      this.fitKey = null;
-      this.ready = true;
-      this.equipped = true; // Show the first new garment when visiting the game.
+      return { item, parts };
+    }
+
+    async load() {
+      // One failed garment must not hide the other garment or the base doll.
+      const definitions = [
+        [TEE_ID, BASE, ["shoulderL", "shoulderR", "torso"], 3, this],
+        [PANTS_ID, PANTS_BASE, [null, "hipL", "hipR", "kneeL", "kneeR"], 5, this.pants]
+      ];
+      const results = await Promise.allSettled(definitions.map(([id, base, joints, count]) =>
+        this.loadGarment(base, id, joints, count)));
+      results.forEach((result, index) => {
+        const [id, , , , garment] = definitions[index];
+        if (result.status === "fulfilled") {
+          Object.assign(garment, result.value, { fitKey: null, ready: true, equipped: true });
+          delete this.loadErrors[id];
+          window.dispatchEvent(new CustomEvent("dresslab:wardrobe-ready", {
+            detail: { equipped: true, id }
+          }));
+        } else {
+          this.loadErrors[id] = result.reason?.message || "의상 이미지 로드 실패";
+          window.dispatchEvent(new CustomEvent("dresslab:wardrobe-error", {
+            detail: { id, message: this.loadErrors[id] }
+          }));
+        }
+      });
       this.rig.render();
-      window.dispatchEvent(new CustomEvent("dresslab:wardrobe-ready", {
-        detail: { equipped: this.equipped, id: item.id }
+      return this.ready || this.pants.ready;
+    }
+
+    getItemState(id = TEE_ID) {
+      const garment = id === TEE_ID ? this : id === PANTS_ID ? this.pants : null;
+      if (!garment) return null;
+      return { id, ready: garment.ready, equipped: garment.equipped,
+        name: garment.item?.name || (id === TEE_ID ? "베이직 화이트 반팔 티셔츠" : "베이직 차콜 긴바지"),
+        error: this.loadErrors[id] || null };
+    }
+
+    // Calling without an ID keeps the original shirt-only public API.
+    setEquipped(value, id = TEE_ID) {
+      const garment = id === TEE_ID ? this : id === PANTS_ID ? this.pants : null;
+      if (!garment?.ready) return false;
+      const next = Boolean(value);
+      if (next === garment.equipped) return true;
+      garment.equipped = next;
+      this.rig.render();
+      window.dispatchEvent(new CustomEvent("dresslab:wardrobe-change", {
+        detail: { equipped: next, id }
       }));
       return true;
     }
 
-    setEquipped(value) {
-      if (!this.ready) return false;
-      const next = Boolean(value);
-      if (next === this.equipped) return true;
-      this.equipped = next;
-      this.rig.render();
-      window.dispatchEvent(new CustomEvent("dresslab:wardrobe-change", {
-        detail: { equipped: next, id: this.item.id }
-      }));
-      return true;
+    unequipAll() {
+      this.setEquipped(false, TEE_ID);
+      this.setEquipped(false, PANTS_ID);
     }
 
     // Same ancestor rotations as the body, including torso idle/gesture rotation.
@@ -204,11 +252,102 @@
       return this.fittedParts;
     }
 
+    // The garment follows the BODY's row axes, not its own loose silhouette.
+    // In particular, calf factors use the original foot endpoint even though
+    // trousers stop at the ankle. Blend width and ratio in one inverse raster.
+    pantsMapping(part, shape) {
+      const body = shape.sources.get(part.bodyPart);
+      if (!body) throw new Error("Missing pants body reference: " + part.bodyPart);
+      const lowerTorso = shape.sources.get("07-LowerTorso.PNG");
+      const first = source => source.rows.find(Boolean);
+      const last = source => [...source.rows].reverse().find(Boolean);
+      const endpoints = new Map([body, lowerTorso].filter(Boolean)
+        .map(source => [source, [first(source), last(source)]]));
+      const bodyRow = (source, y) => {
+        const [start, end] = endpoints.get(source);
+        if (y <= start.y) return start;
+        if (y >= end.y) return end;
+        const index = Math.round(y - source.y);
+        if (source.rows[index]) return source.rows[index];
+        for (let delta = 1; delta < source.h; delta++) {
+          const row = source.rows[index - delta] || source.rows[index + delta];
+          if (row) return row;
+        }
+        return start;
+      };
+      const isPelvis = part.fit === "pelvis";
+      const side = part.side;
+      const kneeY = isPelvis ? 0 : shape.basePivots["knee" + side].y;
+      const hipOffset = isPelvis ? 0 :
+        (shape.basePivots["hip" + side].x - shape.basePivots.torso.x) * (shape.hipScale() - 1);
+      const height = part.image.height;
+      const rows = [];
+      for (let index = 0; index <= height; index++) {
+        const y = part.y + index;
+        const source = isPelvis && y < 1280 ? lowerTorso : body;
+        const kind = isPelvis && y < 1280 ? "lowerTorso" : part.fit;
+        const row = bodyRow(source, y);
+        let axis = row.axis;
+        if (!isPelvis) {
+          const distance = part.fit === "upper"
+            ? Math.min(Math.abs(y - kneeY), Math.abs(y - 1330))
+            : Math.abs(y - kneeY);
+          const smoothAxis = (row.smoothLeft + row.smoothRight) / 2;
+          axis += (smoothAxis - axis) * smootherstep(distance / 24);
+        }
+        rows.push({ axis, scale: shape.factor(kind, side, y, source) });
+      }
+      const at = y => {
+        const p = clamp(y - part.y, 0, height);
+        const index = Math.floor(p), t = p - index;
+        const a = rows[index], b = rows[Math.min(height, index + 1)];
+        return { axis: a.axis + (b.axis - a.axis) * t,
+          scale: a.scale + (b.scale - a.scale) * t };
+      };
+      return {
+        forward(x, y) {
+          const { axis, scale } = at(y);
+          return [axis + (x - axis) * scale + hipOffset, shape.mapRatioY(y)];
+        },
+        inverse(x, y) {
+          const sourceY = shape.unmapRatioY(y);
+          const { axis, scale } = at(sourceY);
+          return [axis + (x - hipOffset - axis) / scale, sourceY];
+        }
+      };
+    }
+
+    fitPantsParts() {
+      const garment = this.pants;
+      const shape = window.dressLabBodyShape;
+      if (!shape?.sources || typeof shape.inverseSprite !== "function") return garment.parts;
+      const state = shape.getState();
+      const key = PANTS_SHAPE_KEYS.map(key => state[key]).join(",");
+      if (garment.fitShape === shape && garment.fitKey === key) return garment.fittedParts;
+      garment.fitShape = shape;
+      garment.fittedParts = PANTS_SHAPE_KEYS.every(key => state[key] === 100)
+        ? garment.parts
+        : garment.parts.map(part => {
+          const map = this.pantsMapping(part, shape);
+          return shape.inverseSprite(part, shape.mappedSpriteBounds(part, map.forward), map.inverse);
+        });
+      garment.fitKey = key;
+      return garment.fittedParts;
+    }
+
     draw(ctx) {
+      // Lower separates precede the shirt, whose hem overlaps the waistband.
+      if (this.pants.ready && this.pants.equipped) {
+        this.drawParts(ctx, this.fitPantsParts());
+      }
       if (!this.ready || !this.equipped) return;
 
       // Draw sleeves behind the garment's torso so the shoulder join is hidden.
-      for (const part of this.fitParts()) {
+      this.drawParts(ctx, this.fitParts());
+    }
+
+    drawParts(ctx, parts) {
+      for (const part of parts) {
         ctx.save();
         this.rotateWith(ctx, part.joint);
         ctx.drawImage(part.image, part.x, part.y);

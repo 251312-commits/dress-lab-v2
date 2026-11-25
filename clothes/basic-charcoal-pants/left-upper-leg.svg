@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="176" height="423" viewBox="164 1284 176 423">
+<!-- Rounded hip and knee overlaps. No outlined cut edge at either joint. -->
+<path d="M174 1368 C174 1328 211 1290 257 1290 C302 1290 337 1324 335 1368 C332 1396 321 1421 317 1450 C311 1493 314 1555 322 1623 C322 1666 288 1702 246 1702 C204 1702 169 1666 169 1623 C172 1555 176 1461 174 1368 Z" fill="#4C4E58"/>
+<path d="M174 1368 C176 1461 172 1555 169 1623 M335 1368 C332 1396 321 1421 317 1450 C311 1493 314 1555 322 1623" fill="none" stroke="#353741" stroke-width="3.1" stroke-linecap="round"/>
+<path d="M184 1408 C183 1465 181 1531 179 1589" fill="none" stroke="#90929C" stroke-width="1.5" opacity=".43" stroke-linecap="round"/>
+<path d="M251 1423 C248 1485 247 1548 247 1595" fill="none" stroke="#373943" stroke-width="2.5" opacity=".32" stroke-linecap="round"/>
+<path d="M290 1428 Q278 1442 271 1462 M182 1571 Q195 1583 210 1587" fill="none" stroke="#858792" stroke-width="2" opacity=".34" stroke-linecap="round"/>
+</svg>

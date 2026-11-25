@@ -26,5 +26,5 @@ const rig=fs.readFileSync(path.join(root,"rig/rig.js"),"utf8");
 assert.match(index,/clothes\/wardrobe\.js/);
 assert.match(index,/wardrobe\.load\(\)/);
 assert.match(rig,/this\.wardrobe\.draw\(ctx\)/);
-assert.match(fs.readFileSync(path.join(root,"ui/layout.js"),"utf8"),/wardrobe\.setEquipped\(next\)/);
+assert.match(fs.readFileSync(path.join(root,"ui/layout.js"),"utf8"),/wardrobe\.setEquipped\(next, wearable\.id\)/);
 console.log("Wardrobe smoke checks passed.");
