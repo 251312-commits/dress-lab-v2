@@ -10,6 +10,10 @@
   const PREVIOUS_STORAGE_KEYS = ["dresslab-v2:facial-care:v3", "dresslab-v2:facial-care:v2"];
   const TOOLS = ["cleanser", "towel", "serum", "cream", "roller"];
   const PRODUCTS = ["cleanser", "serum", "cream"];
+  const DROP_INTERVAL_MS = 300;
+  // Sprite size is visual only. Every dose still has mass 1 and the same
+  // spreading, absorption, wiping and treatment rates as before.
+  const DROP_RADIUS = { cleanser: 26, serum: 18, cream: 26 };
   const WORK_TARGETS = { cleanser: 2.5, towel: 2, serum: 2.5, cream: 2.5, roller: 3 };
   // The finish check and renderer share the same visibility thresholds.
   const VISIBLE = { dot: 0.003, film: 0.0005, dirt: 0.005 };
@@ -83,7 +87,7 @@
       window.addEventListener("dresslab:care-tool-select", event => {
         if (event.detail?.tab !== "facial" || !TOOLS.includes(event.detail.tool)) return;
         this.endStroke();
-        this.selectedTool = event.detail.tool;
+        this.chooseTool(event.detail.tool);
         this.keyboardIndex = 0;
         this.save();
         this.publish();
@@ -157,7 +161,8 @@
           this.careWork.towel = clamp(1 - sum(this.dirt) / INITIAL_DIRT, 0, 1) * WORK_TARGETS.towel;
           this.careWork.roller = this.rollerWork;
         }
-        this.towelWet = saved.version === 4 ? saved.towelWet : this.careWork.towel > 0;
+        this.towelWet = this.selectedTool === "towel" &&
+          (saved.version === 4 ? saved.towelWet : this.careWork.towel > 0);
       } catch (_) { /* Corrupt/blocked storage must not prevent care. */ }
     }
 
@@ -221,9 +226,17 @@
     wetTowel() {
       if (!this.active || this.selectedTool !== "towel") return;
       this.towelWet = true;
-      if (this.cursor) this.cursor.dataset.wet = "true";
+      this.updateCursorArtwork("towel");
       this.save();
       this.publish();
+    }
+
+    chooseTool(tool) {
+      // Wetness belongs to the currently used towel. Picking it up again or
+      // reselecting it keeps the water; choosing another tool dries it.
+      if (this.selectedTool !== tool) this.towelWet = false;
+      this.selectedTool = tool;
+      this.updateCursorArtwork(tool);
     }
 
     // Detailed copies are for save/debug/tests, not percentages or UI badges.
@@ -253,7 +266,7 @@
       if (this.active) {
         // Only read the user's tab selection. Never advance or reveal a tool.
         const chosen = window.DressLabCareRoom.selectedTool;
-        if (TOOLS.includes(chosen)) this.selectedTool = chosen;
+        if (TOOLS.includes(chosen)) this.chooseTool(chosen);
         canvas.tabIndex = 0;
         canvas.setAttribute("role", "button");
         canvas.setAttribute("aria-label", "페이셜 케어 얼굴. 선반의 도구를 얼굴로 끌어 도포하고, 얼굴을 직접 문질러 펴 바른다. 수건은 대야의 물에 적신 뒤 얼굴을 닦는다. 도포 횟수와 도구 순서는 자유롭다. 도구에 초점을 맞춘 Enter 또는 스페이스는 도구 사용, 얼굴에서 같은 키는 문지르기이다.");
@@ -269,6 +282,7 @@
     reset() {
       this.endStroke();
       this.clearMaterials();
+      this.updateCursorArtwork(this.selectedTool);
       this.keyboardIndex = 0;
       this.save();
       this.publish();
@@ -336,7 +350,7 @@
       if (detail.phase === "start") {
         if (!this.active || this.pointerId !== null || !Number.isFinite(detail.clientX) ||
             !Number.isFinite(detail.clientY)) return;
-        this.selectedTool = detail.tool; // An explicit pickup by the user.
+        this.chooseTool(detail.tool); // An explicit pickup by the user.
         this.pointerId = detail.pointerId;
         this.stroke = this.makeStroke("tool", detail.tool, detail);
         this.advanceStroke(detail);
@@ -381,7 +395,11 @@
       if (stroke.kind === "tool" && PRODUCTS.includes(stroke.tool)) {
         const movedFromDose = !stroke.lastDeposit ||
           Math.hypot(point.x - stroke.lastDeposit.x, point.y - stroke.lastDeposit.y) >= 48;
-        if (!stroke.onFace || (pixelsMoved > 0.000001 && movedFromDose && now - stroke.lastDepositTime >= 80)) {
+        const cooledDown = now - stroke.lastDepositTime >= DROP_INTERVAL_MS;
+        // First contact is immediate. Later drops in this same drag also
+        // respect the time gap when leaving and re-entering the face.
+        if (!stroke.lastDeposit || (cooledDown && pixelsMoved > 0.000001 &&
+            (!stroke.onFace || movedFromDose))) {
           this.deposit(stroke.tool, point);
           stroke.lastDeposit = point;
           stroke.lastDepositTime = now;
@@ -426,12 +444,19 @@
       }
     }
 
-    moveCursor(event, tool) {
-      const rect = document.getElementById("artboard").getBoundingClientRect();
-      const src = "./assets/care/facial/" + (tool === "roller" ? "roller-v2" : tool) + ".png";
+    updateCursorArtwork(tool) {
+      if (!this.cursor) return;
+      const name = tool === "roller" ? "roller-v2" :
+        tool === "towel" && this.towelWet ? "towel-wet" : tool;
+      const src = "./assets/care/facial/" + name + ".png";
       if (this.cursor.getAttribute("src") !== src) this.cursor.src = src;
       this.cursor.dataset.tool = tool;
       this.cursor.dataset.wet = String(tool === "towel" && this.towelWet);
+    }
+
+    moveCursor(event, tool) {
+      const rect = document.getElementById("artboard").getBoundingClientRect();
+      this.updateCursorArtwork(tool);
       this.cursor.style.left = (event.clientX - rect.left) + "px";
       this.cursor.style.top = (event.clientY - rect.top) + "px";
       this.cursor.hidden = false;
@@ -606,7 +631,7 @@
 
     toolKey(id) {
       if (!this.active || this.pointerId !== null || !TOOLS.includes(id)) return;
-      this.selectedTool = id;
+      this.chooseTool(id);
       const spots = this.keyboardSpots();
       if (PRODUCTS.includes(id)) {
         this.deposit(id, spots[this.keyboardIndex++ % spots.length]);
@@ -647,7 +672,7 @@
 
     drawDot(ctx, id, dot) {
       if (dot.amount <= VISIBLE.dot) return;
-      const radius = (id === "serum" ? 11 : 16) * Math.pow(Math.min(dot.amount, 3), 0.36);
+      const radius = DROP_RADIUS[id] * Math.pow(Math.min(dot.amount, 3), 0.36);
       ctx.save();
       ctx.translate(dot.x, dot.y);
       ctx.fillStyle = id === "serum" ? "rgba(229,165,185,.8)" : id === "cream" ? "#fff4e5" : "#f7fffd";

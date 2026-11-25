@@ -113,6 +113,11 @@
       button.setAttribute("aria-pressed", String(id === selected));
       button.dataset.recommended = String(selectedTab === "facial" && id === facialState?.recommendedTool);
       button.setAttribute("aria-label", tool.label + (selectedTab === "facial" ? "" : " · 준비 중"));
+      if (id === "towel") {
+        const image = button.querySelector(".ui-care-tool__art img");
+        const src = toolImage(tool);
+        if (image && image.getAttribute("src") !== src) image.setAttribute("src", src);
+      }
     });
     syncBasin();
   }
@@ -166,6 +171,10 @@
     syncOverall();
     syncBasin();
   }
+  function toolImage(tool) {
+    return tool.id === "towel" && facialState?.towelWet
+      ? "./assets/care/facial/towel-wet.png" : tool.image;
+  }
   function renderTools() {
     const tools = currentTools();
     shelf.dataset.sliding = String(tools.length > 3);
@@ -175,7 +184,7 @@
         '<button type="button" class="ui-care-tool', tool.image ? ' ui-care-tool--illustrated' : '',
           '" data-care-tool="', tool.id, '" aria-pressed="false">',
           tool.image
-            ? '<span class="ui-care-tool__art"><img src="' + tool.image + '" alt="" draggable="false"></span><span class="ui-care-tool__label">' + tool.label + '</span>'
+            ? '<span class="ui-care-tool__art"><img src="' + toolImage(tool) + '" alt="" draggable="false"></span><span class="ui-care-tool__label">' + tool.label + '</span>'
             : tool.label,
         '</button>',
       '</div>'

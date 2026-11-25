@@ -1,11 +1,12 @@
 # Facial care artwork
 
-Created for Dress Lab V2 with the built-in image generation tool: the five facial tools on 2026-11-24, and the washbasin on 2026-11-25. Each original file is a separate generated PNG with an alpha channel. No external artwork or third-party brands are included. Source images were copied without altering their pixels.
+Created for Dress Lab V2 with the built-in image generation tool: the five facial tools on 2026-11-24, the washbasin on 2026-11-25, and the wet towel edit on 2026-11-26. Each original file is a separate generated PNG with an alpha channel. No external artwork or third-party brands are included. Source images were copied without altering their pixels.
 
 ## Files
 
 - `cleanser.png`
 - `towel.png`
+- `towel-wet.png`
 - `serum.png`
 - `cream.png`
 - `roller.png`
@@ -16,6 +17,18 @@ Created for Dress Lab V2 with the built-in image generation tool: the five facia
 `roller-v2.png` is a lossless delivery copy of `roller.png`, re-encoded as a conventional RGBA PNG under a new URL. Dimensions (1254 × 1254), decoded RGB pixels and alpha are exactly identical to the generated original. The original file is retained above with its generation metadata. The delivery copy contains only standard image chunks; it does not change the artwork.
 
 The original local and GitHub-main files were byte-identical, passed PNG chunk CRC validation, and decoded successfully. No truncated upload was found. The revised filename allows the shelf and pointer tool to request fresh image bytes; the user's previous browser-side image failure could not be reproduced from the file alone.
+
+## Wet towel variant
+
+`towel-wet.png` was created on 2026-11-26 with the built-in image generation tool in edit mode, using `towel.png` as the edit target. The original dry asset is unchanged. The wet variant preserves its framing, piping, folds, and silhouette, while adding cooler damp shading, a subtle wet sheen, and three small droplets along the lower edge. The generated PNG was copied byte-for-byte; no post-generation image editing or alpha modification was applied.
+
+- Dimensions: 1254 × 1254, RGBA; alpha spans 0–255, matching the dry image canvas.
+- File size: 1,072,271 bytes.
+- SHA-256: `2ba2b259cb5bd8ef5050805ac69b364b601bb65b64791ba3c1a52c73d9de3db2`.
+- Git blob SHA: `e33a58872bead6acc4ab503f0a8494637a14bee5`.
+- PNG signature, all chunk CRCs, final IEND, and full image decoding passed validation.
+- Visible bounds at alpha ≥ 16: dry `(65, 230)` to `(1172, 1096)`; wet `(63, 229)` to `(1172, 1121)`. The right and bottom bounds are exclusive; the lower extension includes the droplets.
+- Dry/wet silhouette intersection-over-union at alpha ≥ 128 is 99.24%. The opaque-pixel centroid shifts by approximately `(-0.06, +1.89)` source pixels, so both states fit the same image box without a framing adjustment.
 
 ## Basin artwork
 
@@ -39,6 +52,17 @@ Use case: stylized-concept. Asset type: transparent PNG tool sprite for a mobile
 ### towel
 
 Use case: stylized-concept. Asset type: transparent PNG tool sprite for a mobile makeover game. Style: clean, soft 2D hand-drawn anime-inspired game illustration, delicate muted dark-mauve outline, simple rounded shapes, very gentle cel-like shading, pastel colors, recognizable at 64 pixels. Composition: one centered isolated object, front/slight three-quarter view, fills about 80% of square image, generous clear transparent margins, no floor or background, no cast ground shadow. No people, no hands, no scenery, no words, lettering, logos, watermark, border, checkerboard, backdrop, or UI. Actual alpha transparency. Primary request: a soft ivory-white washcloth folded in a fluffy little rectangle, lightly draped front corner, simple very pale icy-blue edge piping. Readable rounded folds and cozy fabric; isolated single folded cloth, no basket or other objects.
+
+### towel-wet
+
+Use case: precise-object-edit.
+Asset type: transparent wet-state towel sprite for the pastel mobile makeover game Dress Lab V2.
+Edit target: the provided towel.png, the single folded ivory washcloth with pale icy-blue edge piping on a transparent background.
+Primary request: make THIS EXACT TOWEL visibly wet, as a state variant of the same game object. Preserve the original canvas, the towel's full silhouette, position, size, orientation, camera perspective, folded structure, front corner, edge piping, muted mauve outline, and overall composition as closely as possible. The dry and wet sprites must align when swapped in the same image box.
+Change only the fabric's damp appearance: slightly darker, cool blue-gray damp shadows across the ivory fabric, subtly compressed and softened fluffy folds, a gentle localized wet sheen, and two or three small clear pale-blue water droplets clinging to or just below the lower edge. Keep the object recognizably the same ivory cloth, not a newly colored blue towel. Make the dampness readable when the entire sprite is only about 80 pixels wide.
+Style/medium: preserve the existing soft hand-drawn 2D anime-inspired pastel game illustration, delicate muted dark-mauve contour, rounded folds and gentle painterly shading. Keep the existing icy-blue piping in its original position and width.
+Scene/backdrop: preserve genuine transparent alpha around the towel and tiny droplets. No background, floor, ground shadow, or checkerboard pattern.
+Constraints: no basin, hands, person, faucet, extra fabric, new objects, text, labels, logos, icons, symbols, border, or watermark. Do not crop, recenter, rotate, enlarge, shrink, redesign, or replace the original towel. Do not create a blue backdrop. Output one transparent PNG showing only the same damp towel.
 
 ### serum
 
