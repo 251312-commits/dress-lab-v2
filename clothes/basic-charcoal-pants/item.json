@@ -1,0 +1,23 @@
+{
+  "id": "basic-charcoal-pants",
+  "name": "베이직 차콜 긴바지",
+  "group": "lower",
+  "params": {
+    "formality": 2,
+    "flamboyance": -3,
+    "comfort": 3,
+    "novelty": -3,
+    "exposure": -5
+  },
+  "tags": ["#미니멀", "#트윌", "#단정한"],
+  "color": "#4C4E58",
+  "canvas": {"width": 1206, "height": 2622},
+  "parts": [
+    {"id": "lowerLegL", "src": "left-lower-leg.svg", "joint": "kneeL", "x": 128, "y": 1540, "bodyPart": "12-LowerLeg(L).PNG", "fit": "lower", "side": "L"},
+    {"id": "lowerLegR", "src": "right-lower-leg.svg", "joint": "kneeR", "x": 332, "y": 1540, "bodyPart": "13-LowerLeg(R).PNG", "fit": "lower", "side": "R"},
+    {"id": "upperLegL", "src": "left-upper-leg.svg", "joint": "hipL", "x": 164, "y": 1284, "bodyPart": "10-UpperLeg(L).PNG", "fit": "upper", "side": "L"},
+    {"id": "upperLegR", "src": "right-upper-leg.svg", "joint": "hipR", "x": 318, "y": 1284, "bodyPart": "11-UpperLeg(R).PNG", "fit": "upper", "side": "R"},
+    {"id": "pelvis", "src": "pelvis.svg", "joint": null, "x": 170, "y": 1229, "bodyPart": "09-Hips.PNG", "fit": "pelvis"}
+  ],
+  "notes": "Original transparent SVGs aligned to V2's 1206×2622 source coordinates. Draw shins, thighs, then pelvis; draw the shirt above the pants. The waistband begins at y1234 and ankle hems finish near y1960, leaving the original feet visible. Rounded hip/knee overlaps use the same cloth color with no outlined cut edges. Fit the fabric using the original body's deformation axes and foot-length reference."
+}
