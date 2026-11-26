@@ -1,0 +1,14 @@
+const assert = require("node:assert/strict");
+const { classifyColor, summarize } = require("../ui/outfit-review.js");
+const tee = { ready: true, equipped: true, ...require("../clothes/basic-white-tee/item.json") };
+const pants = { ready: true, equipped: true, ...require("../clothes/basic-charcoal-pants/item.json") };
+assert.deepEqual(summarize([tee, pants]).totals, { formality: -1, flamboyance: -6, comfort: 7, novelty: -7, exposure: -7 });
+assert.equal(summarize([tee, pants]).tags.filter(tag => tag === "#미니멀").length, 1);
+assert.deepEqual(summarize([tee, {...pants, equipped: false}]).totals, tee.params);
+assert.equal(summarize([{...tee, ready: false}]).equipped.length, 0);
+assert.equal(summarize([{ready: true, equipped: true}]).totals.comfort, null);
+assert.equal(classifyColor(tee.color).family, "화이트");
+assert.equal(classifyColor(pants.color).family, "그레이");
+assert.equal(classifyColor("#D27B95").family, "핑크");
+assert.equal(classifyColor("invalid"), null);
+console.log("PASS: equipped-only totals, tags, provisional applied color categories");

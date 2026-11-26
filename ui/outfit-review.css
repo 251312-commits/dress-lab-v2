@@ -1,0 +1,28 @@
+/* Temporary read-only review in the existing right-side editor. */
+.ui-review-panel {
+  display: none;
+  position: absolute;
+  top: 112px;
+  left: 24px;
+  right: 24px;
+  height: 1084px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  touch-action: pan-y;
+  padding: 0 6px 20px;
+  font-size: 32px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.ui-scene[data-room="dress"][data-dress-tab="review"] .ui-review-panel { display: block; }
+.ui-review-panel h2 { margin: 0 0 8px; font-size: 46px; }
+.ui-review-panel h3 { margin: 18px 0 10px; font-size: 36px; line-height: 1.25; }
+.ui-review-panel p { margin: 10px 0; }
+.ui-review-panel .ui-review-note { font-size: 27px; color: #6c625b; }
+.ui-review-values { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; margin: 0; }
+.ui-review-values dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 650; }
+.ui-review-panel .ui-review-tags { font-size: 29px; color: #63564d; }
+.ui-review-item { border-top: 3px solid #d9d3ce; margin-top: 22px; padding-top: 5px; }
+.ui-review-color { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 28px; }
+.ui-review-swatch { flex: 0 0 36px; height: 36px; border: 2px solid #766e68; }
