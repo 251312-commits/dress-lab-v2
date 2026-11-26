@@ -1,6 +1,6 @@
 // State/input regression with the real workbench, wardrobe and SVG rasterization.
 // Requires @napi-rs/canvas. Run: node tests/dye-workbench-state.cjs
-// DOM/event geometry is a small fixture: this is NOT browser/layout/touch QA.
+// DOM/event geometry is a fixture: this is NOT browser/layout/touch QA.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -35,9 +35,9 @@ class Element extends EventTarget {
   }
 }
 
-// Keep native Canvas objects as native drawImage inputs; attach only DOM methods.
+// Native Canvas objects remain valid drawImage inputs; attach only DOM methods.
 function interactiveCanvas() {
-  const canvas = createCanvas(432, 244), node = new Element();
+  const canvas = createCanvas(432, 352), node = new Element();
   for (const name of ['addEventListener', 'dispatchEvent', 'setAttribute', 'getAttribute']) {
     canvas[name] = node[name].bind(node);
   }
@@ -45,10 +45,9 @@ function interactiveCanvas() {
   canvas.setPointerCapture = id => captured.add(id);
   canvas.hasPointerCapture = id => captured.has(id);
   canvas.releasePointerCapture = id => captured.delete(id);
-  canvas.getBoundingClientRect = () => ({ left: 220, top: 340, width: 144, height: 244 / 3 });
+  canvas.getBoundingClientRect = () => ({ left: 220, top: 340, width: 144, height: 352 / 3 });
   return canvas;
 }
-
 function emit(target, type, props = {}) {
   const event = new Event(type, { cancelable: true });
   Object.assign(event, props);
@@ -60,25 +59,21 @@ const pixelHash = canvas => createHash('sha256').update(Buffer.from(
 
 async function run() {
   const scene = new Element(), bench = new Element(), colors = new Element();
-  const selected = new Element(); selected.dataset.item = 'shirt'; scene.dataset.room = 'dress';
-  const canvas = interactiveCanvas();
-  const primary = new Element(), secondary = new Element(), progress = new Element();
+  scene.dataset.room = 'dress'; scene.dataset.dressTab = 'color';
+  const canvas = interactiveCanvas(), progress = new Element(), note = new Element();
   progress.firstElementChild = new Element();
-  const symbol = new Element(), use = new Element();
   const nodes = new Map([
     ['ui-scene', scene], ['ui-selection-status', new Element()],
-    ['ui-dye-canvas', canvas], ['ui-dye-select', primary],
-    ['ui-dye-cancel', secondary], ['ui-dye-phase', new Element()]
+    ['ui-dye-canvas', canvas], ['ui-dye-note', note]
   ]);
-  scene.querySelector = selector => ({ '.ui-preview': bench, '.ui-colors': colors,
-    ".ui-outfit-item[aria-pressed='true']": selected })[selector];
-  bench.querySelector = selector => ({ '.ui-dye-progress': progress,
-    '.ui-preview__icon': symbol, '#ui-preview-use': use })[selector];
+  scene.querySelector = selector => ({ '.ui-preview': bench, '.ui-colors': colors })[selector];
+  bench.querySelector = selector => ({ '.ui-dye-progress': progress })[selector];
   const document = new EventTarget();
   document.getElementById = id => nodes.get(id) || null;
   document.createElement = tag => { assert.equal(tag, 'canvas'); return createCanvas(1, 1); };
   const window = new EventTarget();
-  let nextFrame = 0;
+  let selectedId = TEE, nextFrame = 0;
+  window.DressLabOutfits = { get selectedId() { return selectedId; } };
   const frames = new Map();
   const flush = () => { for (const [id, callback] of [...frames]) { frames.delete(id); callback(); } };
   const sandbox = { window, document, CustomEvent, console,
@@ -103,11 +98,7 @@ async function run() {
   }
   rig.render();
   const mutationEvents = [];
-  window.addEventListener('dresslab:wardrobe-change', event => {
-    mutationEvents.push(event.detail);
-    // Mirrors layout.js's public event wiring without mocking the controller.
-    window.DressLabDyeWorkbench?.sync();
-  });
+  window.addEventListener('dresslab:wardrobe-change', event => mutationEvents.push(event.detail));
   let pickerColor;
   window.DressLabColorWheel = { setHex(hex) {
     pickerColor = hex;
@@ -117,105 +108,112 @@ async function run() {
   const workbench = window.DressLabDyeWorkbench;
   const state = () => workbench.getState();
   const appearance = () => JSON.stringify([wardrobe.getItemState(TEE), wardrobe.getItemState(PANTS)]);
-  const click = (button = primary, detail = 1) => {
-    if (!button.disabled) emit(button, 'click', { detail });
+  const chooseColor = hex => { window.DressLabColorWheel.setHex(hex); flush(); };
+  const chooseItem = id => {
+    selectedId = id;
+    window.dispatchEvent(new CustomEvent('dresslab:outfit-selection-change', { detail: { id } }));
     flush();
   };
-  const chooseColor = hex => { window.DressLabColorWheel.setHex(hex); flush(); };
-  const chooseItem = item => { selected.dataset.item = item; workbench.sync(); flush(); };
   const room = name => {
     scene.dataset.room = name;
     window.dispatchEvent(new CustomEvent('dresslab:room-change', { detail: { room: name } }));
     flush();
   };
+  const tab = name => {
+    scene.dataset.dressTab = name;
+    window.dispatchEvent(new CustomEvent('dresslab:dress-tab-change', { detail: { tab: name } }));
+    flush();
+  };
   const pointer = (type, x, y, id = 4) => emit(canvas, type, { pointerId: id,
     isPrimary: true, button: 0, clientX: 220 + x / 3, clientY: 340 + y / 3 });
-  const finish = (keyboard = false) => {
-    for (let i = 0; i < 12 && state().phase === 'dyeing'; i++) {
-      if (keyboard) emit(canvas, 'keydown', { key: 'Enter', repeat: false }); else click();
+  const firstStroke = () => {
+    pointer('pointerdown', 216, 145);
+    pointer('pointermove', 240, 160);
+    pointer('pointerup', 240, 160);
+  };
+  const finish = () => {
+    for (let i = 0; i < 16 && state().phase !== 'complete'; i++) {
+      emit(canvas, 'keydown', { key: i % 2 ? ' ' : 'Enter', repeat: false });
     }
     assert.equal(state().phase, 'complete');
-    assert.equal(primary.textContent, '적용');
+    assert.equal(state().progress, 100);
+    flush();
   };
 
   assert.equal(state().ready, true);
-  assert.equal(primary.disabled, true);
-  assert.equal(symbol.getAttribute('hidden'), '', 'Loaded art hides the SVG placeholder attribute');
+  assert.doesNotMatch(bench.innerHTML, /<button\b/, 'Dye workbench has no selection or apply buttons');
   const initialPreview = pixelHash(canvas), initialDoll = pixelHash(doll), initialState = appearance();
   chooseColor('#D27B95');
   const pinkPreview = pixelHash(canvas);
   assert.notEqual(pinkPreview, initialPreview);
   assert.equal(pixelHash(doll), initialDoll);
-  assert.equal(appearance(), initialState, 'Candidate color cannot change equipped state or color');
+  assert.equal(appearance(), initialState, 'Preview cannot change equipped state or color');
   assert.equal(mutationEvents.length, 0);
   window.dispatchEvent(new CustomEvent('dresslab:skin-color-change', { detail: { hex: '#123456' } }));
   window.dispatchEvent(new CustomEvent('dresslab:color-change', { detail: { hex: '#123456', source: 'skin' } }));
   assert.equal(state().previewColor, '#D27B95', 'Skin input stays independent');
 
-  click();
-  assert.equal(state().phase, 'dyeing');
+  firstStroke();
+  assert.equal(state().phase, 'dyeing', 'First stroke starts work without a selection button');
   assert.equal(colors.inert, true);
-  assert.equal(pixelHash(canvas), initialPreview, 'Dyeing begins from the applied color');
+  assert.ok(state().progress > 0 && state().progress < 100);
+  assert.notEqual(pixelHash(canvas), initialPreview);
+  assert.notEqual(pixelHash(canvas), pinkPreview, 'Partial stroke is not the finished preview');
+  assert.equal(appearance(), initialState);
+  assert.equal(mutationEvents.length, 0);
   chooseColor('#326DD0');
   assert.equal(state().targetColor, '#D27B95');
-  assert.equal(pickerColor, '#D27B95', 'An in-progress job freezes its target color');
-  pointer('pointerdown', 216, 85);
-  pointer('pointermove', 240, 110);
-  assert.ok(state().progress > 0 && state().progress < 100);
-  assert.notEqual(pixelHash(canvas), initialPreview, 'Real masked canvas changes on a brush stroke');
-  assert.notEqual(pixelHash(canvas), pinkPreview, 'A partial stroke is not the complete preview');
+  assert.equal(pickerColor, '#D27B95', 'In-progress work freezes its target color');
+  pointer('pointerdown', 216, 145);
   const partial = state().progress;
-  pointer('pointercancel', 240, 110);
-  pointer('pointermove', 0, 240);
+  pointer('pointercancel', 216, 145);
+  pointer('pointermove', 0, 340);
   assert.equal(state().progress, partial, 'Cancelled pointer movement cannot paint');
   emit(canvas, 'keydown', { key: 'Enter', repeat: true });
-  assert.equal(state().progress, partial, 'Holding the keyboard action cannot finish the job');
-  finish(true);
+  assert.equal(state().progress, partial, 'Held keyboard action cannot finish work');
+  finish();
   assert.equal(pixelHash(canvas), pinkPreview);
-  assert.equal(pixelHash(doll), initialDoll);
-  assert.equal(appearance(), initialState, 'Even a completed job remains unapplied');
-  assert.equal(mutationEvents.length, 0);
-  click(primary, 2);
-  assert.equal(state().phase, 'complete', 'Double-click continuation cannot apply');
-  const repeatedKey = emit(primary, 'keydown', { key: 'Enter', repeat: true });
-  assert.equal(repeatedKey.defaultPrevented, true, 'Native repeated-key click is prevented');
-  click();
-  assert.equal(wardrobe.getItemState(TEE).color, '#D27B95');
+  assert.equal(wardrobe.getItemState(TEE).color, '#D27B95', 'Completion itself commits the color');
   assert.equal(wardrobe.getItemState(TEE).equipped, true);
   assert.equal(wardrobe.getItemState(PANTS).color, '#4C4E58');
-  assert.equal(state().phase, 'preview');
-  assert.equal(colors.inert, false);
-  assert.equal(mutationEvents.filter(event => event.color).length, 1);
+  assert.equal(colors.inert, false, 'Completion unlocks the wheel immediately');
+  assert.equal(mutationEvents.length, 1, 'Automatic completion emits one change');
   assert.notEqual(pixelHash(doll), initialDoll);
-  click();
-  assert.equal(mutationEvents.filter(event => event.color).length, 1, 'Applied color is committed once');
+  firstStroke();
+  emit(canvas, 'keydown', { key: 'Enter', repeat: false });
+  assert.equal(mutationEvents.length, 1, 'Further input at the same applied color is inert');
+  assert.ok(mutationEvents.every(event => event.color), 'Dyeing never changes equipment');
 
-  click(secondary);
-  assert.equal(wardrobe.getItemState(TEE).equipped, false);
-  assert.equal(primary.textContent, '착용');
-  click();
-  assert.equal(wardrobe.getItemState(TEE).equipped, true, 'Same-color clothes can be worn without re-dyeing');
-  assert.equal(state().phase, 'preview');
-  chooseColor('#326DD0'); click(); click();
+  chooseColor('#326DD0'); firstStroke();
   const beforeCancel = appearance(), eventsBeforeCancel = mutationEvents.length;
-  click(secondary);
+  tab('clothes');
   assert.equal(state().phase, 'preview');
+  assert.equal(state().targetColor, null);
   assert.equal(appearance(), beforeCancel);
   assert.equal(mutationEvents.length, eventsBeforeCancel);
-  click(); pointer('pointerdown', 216, 100);
-  chooseItem('pants');
+  assert.equal(colors.inert, false);
+  firstStroke();
+  emit(canvas, 'keydown', { key: 'Enter', repeat: false });
+  assert.equal(state().phase, 'preview', 'Hidden color tab does not receive dye work');
+  tab('color');
+  assert.equal(state().previewColor, '#326DD0');
+  firstStroke();
+  chooseItem(PANTS);
   assert.equal(state().phase, 'preview');
   assert.equal(state().itemId, PANTS);
-  assert.equal(appearance(), beforeCancel, 'Changing garments discards the unfinished job');
-  pointer('pointermove', 400, 200);
+  assert.equal(appearance(), beforeCancel, 'Switching worn garments discards unfinished dye');
+  pointer('pointermove', 400, 300);
   assert.equal(state().progress, 0);
 
-  chooseColor('#548C66'); click(); finish();
+  chooseColor('#548C66');
+  emit(canvas, 'keydown', { key: 'Enter', repeat: false });
+  assert.equal(state().phase, 'dyeing', 'Keyboard starts dyeing directly');
+  assert.ok(state().progress > 0);
   assert.equal(wardrobe.getItemState(PANTS).color, '#4C4E58');
-  click();
+  finish();
   assert.equal(wardrobe.getItemState(PANTS).color, '#548C66');
   assert.equal(wardrobe.getItemState(TEE).color, '#D27B95');
-  chooseItem('shirt'); click(); click();
+  chooseItem(TEE); firstStroke();
   const beforeRoom = appearance(), roomEvents = mutationEvents.length;
   room('magic');
   assert.equal(state().phase, 'preview');
@@ -224,16 +222,39 @@ async function run() {
   assert.equal(mutationEvents.length, roomEvents);
   room('dress');
   assert.equal(state().phase, 'preview');
-  chooseItem('bow');
+
+  // Equipment changes belong to the clothes panel, never to dye input.
+  wardrobe.setEquipped(false, TEE);
+  chooseItem(null);
   assert.equal(state().ready, false);
-  assert.equal(primary.disabled, true);
-  chooseItem('shirt');
+  const noGarmentEvents = mutationEvents.length;
+  firstStroke(); emit(canvas, 'keydown', { key: 'Enter', repeat: false });
+  assert.equal(wardrobe.getItemState(TEE).equipped, false);
+  assert.equal(mutationEvents.length, noGarmentEvents);
+  wardrobe.setEquipped(true, TEE); chooseItem(TEE);
   assert.equal(state().ready, true);
-  chooseColor('#FFFFFF'); click(); finish(); click();
+  assert.equal(wardrobe.getItemState(TEE).color, '#D27B95', 'Re-equipping keeps the dyed color');
+  chooseColor('#8B7FC4');
+  const realCommit = wardrobe.setDyeColor, failedEvents = mutationEvents.length;
+  let failedCommits = 0;
+  wardrobe.setDyeColor = () => { failedCommits++; return false; };
+  for (let index = 0; index < 16 && !failedCommits; index++) {
+    emit(canvas, 'keydown', { key: 'Enter', repeat: false });
+  }
+  assert.equal(failedCommits, 1);
+  assert.equal(wardrobe.getItemState(TEE).color, '#D27B95', 'Failed automatic apply preserves the worn color');
+  assert.equal(mutationEvents.length, failedEvents);
+  assert.equal(state().phase, 'preview');
+  assert.equal(colors.inert, false);
+  assert.equal(note.hidden, false, 'A failed commit has a short visible retry message');
+  wardrobe.setDyeColor = realCommit;
+  finish();
+  assert.equal(wardrobe.getItemState(TEE).color, '#8B7FC4', 'Another stroke can retry without a button');
+  chooseColor('#FFFFFF'); finish();
   assert.equal(wardrobe.getItemState(TEE).color, '#FFFFFF');
-  assert.equal(pixelHash(canvas), initialPreview, 'Re-dyeing to the native color restores original SVG art');
+  assert.equal(pixelHash(canvas), initialPreview, 'Native color restores original SVG art');
   assert.equal(wardrobe.getItemState(PANTS).color, '#548C66');
-  console.log('PASS: real SVG/canvas preview isolation, masked strokes, completion/apply boundary, cancellation, item/room changes, garment/skin independence, repeat-input guards and native-color restore');
-  console.log('LIMIT: DOM nodes, pointer geometry/capture and button defaults are fixtures; browser rendering, CSS, mobile hit targets and native event delivery require browser QA.');
+  console.log('PASS: button-free preview/first-stroke/automatic-commit, real masked pixels, one commit, tab/room/item cancellation, equipped-only targets, independent colors and native restore');
+  console.log('LIMIT: DOM, geometry and pointer delivery are fixtures; CSS and native mobile interaction still require browser QA.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

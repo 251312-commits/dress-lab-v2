@@ -32,18 +32,14 @@
     ["skin", "피부톤"],
     ["face", "얼굴"]
   ];
-  const items = [
-    ["shirt", "상의"],
-    ["bow", "장식"],
+  const outfitSlots = [
+    ["upper", "상의"],
+    ["accessory", "장식"],
     ["belt", "벨트"],
-    ["pants", "하의"],
+    ["lower", "하의"],
     ["shoes", "신발"],
-    ["none", "착용 해제"]
+    ["extra", "기타"]
   ];
-  const wearables = {
-    shirt: { id: "basic-white-tee", name: "베이직 화이트 반팔 티셔츠" },
-    pants: { id: "basic-charcoal-pants", name: "베이직 차콜 긴바지" }
-  };
   const rooms = [
     ["reception", "접수실"],
     ["care", "케어룸"],
@@ -90,22 +86,15 @@
           '<div class="ui-sliders" aria-label="HSB 슬라이더">', sliderMarkup, '</div>',
         '</section>',
 
-        '<section class="ui-preview" aria-label="선택한 의상 카테고리 미리보기">',
-          '<svg class="ui-preview__icon" viewBox="0 0 64 64" aria-hidden="true">',
-            '<use id="ui-preview-use" href="#dl2-shirt"></use>',
-          '</svg>',
-          '<img id="ui-garment-preview" class="ui-preview__garment" src="./clothes/basic-white-tee/preview.svg?v=separates-pants-v1" alt="" aria-hidden="true">',
-          '<button type="button" class="ui-preview__check" id="ui-preview-check" aria-label="베이직 화이트 반팔 티셔츠 불러오는 중" aria-pressed="false" disabled>',
-            '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M11 33 L26 48 L53 13"/></svg>',
-          '</button>',
-        '</section>',
+        '<section class="ui-preview" aria-label="의상 염색 작업대"></section>',
+        '<section class="ui-wardrobe-panel" aria-label="옷 고르기"></section>',
 
         '<h2 class="ui-outfit-heading">현재 착용중</h2>',
-        '<div class="ui-outfit-grid" role="group" aria-label="의상 종류 선택">',
-          items.map(([id, label], index) => [
-            '<button type="button" class="ui-outfit-item" data-item="', id,
-              '" aria-label="', label, '" aria-pressed="', index === 0, '">',
-              '<svg viewBox="0 0 64 64" aria-hidden="true"><use href="#dl2-', id, '"></use></svg>',
+        '<div class="ui-outfit-grid" role="group" aria-label="현재 착용 중인 옷">',
+          outfitSlots.map(([id, label]) => [
+            '<button type="button" class="ui-outfit-item" data-outfit-slot="', id,
+              '" aria-label="', label, ' 비어 있음" aria-pressed="false" disabled>',
+              '<canvas class="ui-outfit-item__art" width="126" height="156" aria-hidden="true" hidden></canvas>',
             '</button>'
           ].join("")).join(""),
         '</div>',
@@ -162,11 +151,16 @@
     const config = isMagic ? magicTabs : tabs;
     if (!config.some(([id]) => id === tabName)) return false;
     scene.dataset.magicTab = isMagic ? tabName : "";
+    if (!isMagic) scene.dataset.dressTab = tabName;
     overlay.querySelectorAll(".ui-tabs__button").forEach(button => {
       button.setAttribute("aria-pressed", String(button.dataset.tab === tabName));
     });
     if (isMagic) {
       window.dispatchEvent(new CustomEvent("dresslab:magic-tab-change", {
+        detail: { tab: tabName }
+      }));
+    } else if (scene.dataset.room === "dress") {
+      window.dispatchEvent(new CustomEvent("dresslab:dress-tab-change", {
         detail: { tab: tabName }
       }));
     }
@@ -197,6 +191,7 @@
   setRoom(validRooms.has(requestedRoom) ? requestedRoom : "dress");
   window.DressLabRooms = {
     get current() { return scene.dataset.room; },
+    get currentDressTab() { return scene.dataset.dressTab || "color"; },
     setRoom,
     setTab
   };
@@ -215,25 +210,6 @@
     if (room) {
       setRoom(room.dataset.room);
       selectionStatus.textContent = room.textContent + " 선택";
-      return;
-    }
-
-    const item = event.target.closest(".ui-outfit-item");
-    if (item) {
-      overlay.querySelectorAll(".ui-outfit-item").forEach(button => {
-        button.setAttribute("aria-pressed", String(button === item));
-      });
-      document.getElementById("ui-preview-use")?.setAttribute("href", "#dl2-" + item.dataset.item);
-      if (item.dataset.item === "none") {
-        window.dressLabWardrobe?.unequipAll();
-        selectionStatus.textContent = "상의와 하의 착용 해제";
-      } else {
-        const wearable = wearables[item.dataset.item];
-        selectionStatus.textContent = wearable
-          ? wearable.name + " · 작업대에서 색 선택"
-          : item.getAttribute("aria-label") + " · 신규 의상 준비 중";
-      }
-      syncOutfitStatus();
       return;
     }
 
@@ -256,36 +232,6 @@
     }
   });
 
-  // Stay in sync when the outfit becomes available after the base doll loads.
-  function syncOutfitStatus() {
-    if (window.DressLabDyeWorkbench) {
-      window.DressLabDyeWorkbench.sync();
-      return;
-    }
-    const selected = overlay.querySelector(".ui-outfit-item[aria-pressed='true']")?.dataset.item;
-    const wearable = wearables[selected];
-    const check = document.getElementById("ui-preview-check");
-    const preview = document.getElementById("ui-garment-preview");
-    const state = wearable && window.dressLabWardrobe?.getItemState(wearable.id);
-    check.disabled = !state?.ready;
-    check.setAttribute("aria-pressed", String(Boolean(state?.equipped)));
-    check.setAttribute("aria-label", wearable
-      ? wearable.name + (state?.error ? " 로드 실패" : !state?.ready ? " 불러오는 중" : " 착용 전환")
-      : "착용할 의상 없음");
-    preview.hidden = !wearable;
-    if (wearable && preview.dataset.item !== wearable.id) {
-      preview.src = "./clothes/" + wearable.id + "/preview.svg?v=separates-pants-v1";
-      preview.dataset.item = wearable.id;
-    }
-  }
-  syncOutfitStatus();
-  window.addEventListener("dresslab:wardrobe-ready", syncOutfitStatus);
-  window.addEventListener("dresslab:wardrobe-change", syncOutfitStatus);
-  window.addEventListener("dresslab:wardrobe-error", event => {
-    selectionStatus.textContent = event.detail?.message || "의상 로드 실패";
-    syncOutfitStatus();
-  });
-
-  // Interactive HSB handling lives in ui/color-wheel.js.
-  // The workbench previews dresslab:color-change; only completed dye is applied.
+  // Wardrobe selection and equipped thumbnails live in ui/wardrobe-panel.js.
+  // Color picking and the dye workbench have their own independent input.
 })();
