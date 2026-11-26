@@ -109,6 +109,15 @@
         error: this.loadErrors[id] || null };
     }
 
+    // Read-only metadata for the temporary review panel.
+    getReviewItems() {
+      return [TEE_ID, PANTS_ID].map(id => {
+        const item = this.garmentFor(id).item;
+        return { ...this.getItemState(id), params: { ...item?.params },
+          tags: Array.isArray(item?.tags) ? [...item.tags] : [] };
+      });
+    }
+
     garmentFor(id) {
       return id === TEE_ID ? this : id === PANTS_ID ? this.pants : null;
     }
