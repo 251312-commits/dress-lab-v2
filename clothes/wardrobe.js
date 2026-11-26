@@ -7,13 +7,17 @@
   const PANTS_BASE = "./clothes/basic-charcoal-pants/";
   const TEE_ID = "basic-white-tee";
   const PANTS_ID = "basic-charcoal-pants";
-  const VERSION = "separates-pants-v1";
+  const VERSION = "dye-workbench-v1";
   const TORSO_FILES = new Set([
     "03-Bust.PNG", "06-UpperTorso.PNG", "07-LowerTorso.PNG", "08-TorsoJoint.PNG"
   ]);
   const SHAPE_KEYS = ["upperTorso", "bust", "waist", "hips", "armWidth", "armLength", "ratio"];
   const PANTS_SHAPE_KEYS = ["waist", "hips", "thighs", "calves", "ratio"];
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+  const normalizeColor = value => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
+    ? value.toUpperCase() : null;
+  const rgb = hex => [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16));
+  const luminance = channels => channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
   const smootherstep = value => {
     const t = clamp(value, 0, 1);
     return t * t * t * (t * (t * 6 - 15) + 10);
@@ -32,6 +36,11 @@
       this.pants = { ready: false, equipped: false, item: null, parts: [],
         fitKey: null, fittedParts: [] };
       this.loadErrors = {};
+      this.color = "#FFFFFF";
+      this.pants.color = "#4C4E58";
+      // Keys are source/fitted image identities. Old fitted canvases can be
+      // collected, and a moving wheel never retains an unbounded color list.
+      this.dyeImages = new WeakMap();
       rig.wardrobe = this;
     }
 
@@ -75,6 +84,7 @@
         const [id, , , , garment] = definitions[index];
         if (result.status === "fulfilled") {
           Object.assign(garment, result.value, { fitKey: null, ready: true, equipped: true });
+          garment.color = this.defaultColor(id);
           delete this.loadErrors[id];
           window.dispatchEvent(new CustomEvent("dresslab:wardrobe-ready", {
             detail: { equipped: true, id }
@@ -91,11 +101,135 @@
     }
 
     getItemState(id = TEE_ID) {
-      const garment = id === TEE_ID ? this : id === PANTS_ID ? this.pants : null;
+      const garment = this.garmentFor(id);
       if (!garment) return null;
       return { id, ready: garment.ready, equipped: garment.equipped,
+        color: garment.color, defaultColor: this.defaultColor(id),
         name: garment.item?.name || (id === TEE_ID ? "베이직 화이트 반팔 티셔츠" : "베이직 차콜 긴바지"),
         error: this.loadErrors[id] || null };
+    }
+
+    garmentFor(id) {
+      return id === TEE_ID ? this : id === PANTS_ID ? this.pants : null;
+    }
+
+    defaultColor(id) {
+      return normalizeColor(this.garmentFor(id)?.item?.color) ||
+        (id === PANTS_ID ? "#4C4E58" : "#FFFFFF");
+    }
+
+    // This is the commit boundary. Previewing and dyeing never call it; the
+    // workbench calls it only after the player completes dyeing and applies.
+    setDyeColor(hex, id = TEE_ID) {
+      const garment = this.garmentFor(id), next = normalizeColor(hex);
+      if (!garment?.ready || !next) return false;
+      if (garment.color === next) return true;
+      const previous = garment.color;
+      try {
+        // Prepare before mutating state so a raster failure cannot commit a
+        // color whose artwork the player cannot see.
+        const parts = id === PANTS_ID ? this.fitPantsParts() : this.fitParts();
+        for (const part of parts) this.coloredImage(part.image, next, this.defaultColor(id));
+        garment.color = next;
+        this.rig.render();
+      } catch (error) {
+        garment.color = previous;
+        console.warn("의상 염색 적용 실패:", error);
+        try { this.rig.render(); } catch (_) { /* Keep the previous public state. */ }
+        return false;
+      }
+      window.dispatchEvent(new CustomEvent("dresslab:wardrobe-change", {
+        detail: { id, equipped: garment.equipped, color: next }
+      }));
+      return true;
+    }
+
+    coloredImage(image, color, baseColor) {
+      if (color === baseColor) return image;
+      let cached = this.dyeImages.get(image);
+      const key = baseColor + ":" + color;
+      if (cached?.has(key)) {
+        const colored = cached.get(key);
+        // Refresh recency so an applied color drawn by each motion frame
+        // survives while the workbench cycles through candidate colors.
+        cached.delete(key);
+        cached.set(key, colored);
+        return colored;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) throw new Error("Cannot dye garment image");
+      ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const sourceLevel = luminance(rgb(baseColor));
+      const target = rgb(color);
+      // A little reflected light keeps folds visible on near-black fabric.
+      // Both the workbench and the doll use this exact same shaded result.
+      const reflectedLight = Math.max(0, 16 - luminance(target));
+      const shadedTarget = target.map(channel => channel + reflectedLight);
+      for (let index = 0; index < pixels.data.length; index += 4) {
+        if (!pixels.data[index + 3]) continue;
+        const level = pixels.data[index] * 0.2126 + pixels.data[index + 1] * 0.7152 +
+          pixels.data[index + 2] * 0.0722;
+        const shade = Math.min(1, level / Math.max(1, sourceLevel));
+        const highlight = level > sourceLevel ?
+          (level - sourceLevel) / Math.max(1, 255 - sourceLevel) : 0;
+        for (let channel = 0; channel < 3; channel++) {
+          pixels.data[index + channel] = Math.round(clamp(
+            shadedTarget[channel] * shade + (255 - shadedTarget[channel]) * highlight, 0, 255));
+        }
+      }
+      ctx.putImageData(pixels, 0, 0);
+      if (!cached) {
+        cached = new Map();
+        this.dyeImages.set(image, cached);
+      }
+      // Current appearance and two neighboring preview colors are enough.
+      if (cached.size >= 3) cached.delete(cached.keys().next().value);
+      cached.set(key, canvas);
+      return canvas;
+    }
+
+    // Show the same original parts and dye shading used by draw(), without
+    // changing equipped state, saved color, body fit or animation pose.
+    renderPreview(canvas, id = TEE_ID, hex) {
+      const garment = this.garmentFor(id);
+      const color = normalizeColor(hex === undefined ? garment?.color : hex);
+      if (!garment?.ready || !color || !canvas?.width || !canvas.height || !garment.parts.length) return false;
+      try {
+        const parts = garment.parts;
+        const left = Math.min(...parts.map(part => part.x));
+        const top = Math.min(...parts.map(part => part.y));
+        const right = Math.max(...parts.map(part => part.x + (part.image.naturalWidth || part.image.width)));
+        const bottom = Math.max(...parts.map(part => part.y + (part.image.naturalHeight || part.image.height)));
+        const scale = Math.min(canvas.width * 0.84 / (right - left), canvas.height * 0.84 / (bottom - top));
+        if (!Number.isFinite(scale) || scale <= 0) return false;
+        const staging = document.createElement("canvas");
+        staging.width = canvas.width;
+        staging.height = canvas.height;
+        const ctx = staging.getContext("2d");
+        const target = canvas.getContext("2d");
+        if (!ctx || !target) return false;
+        ctx.setTransform(scale, 0, 0, scale,
+          (canvas.width - (right - left) * scale) / 2 - left * scale,
+          (canvas.height - (bottom - top) * scale) / 2 - top * scale);
+        for (const part of parts) {
+          ctx.drawImage(this.coloredImage(part.image, color, this.defaultColor(id)), part.x, part.y);
+        }
+        target.save();
+        target.setTransform(1, 0, 0, 1, 0, 0);
+        target.globalAlpha = 1;
+        target.globalCompositeOperation = "source-over";
+        target.clearRect(0, 0, canvas.width, canvas.height);
+        target.drawImage(staging, 0, 0);
+        target.restore();
+        return true;
+      } catch (error) {
+        console.warn("의상 미리보기 생성 실패:", error);
+        return false;
+      }
     }
 
     // Calling without an ID keeps the original shirt-only public API.
@@ -338,19 +472,20 @@
     draw(ctx) {
       // Lower separates precede the shirt, whose hem overlaps the waistband.
       if (this.pants.ready && this.pants.equipped) {
-        this.drawParts(ctx, this.fitPantsParts());
+        this.drawParts(ctx, this.fitPantsParts(), PANTS_ID);
       }
       if (!this.ready || !this.equipped) return;
 
       // Draw sleeves behind the garment's torso so the shoulder join is hidden.
-      this.drawParts(ctx, this.fitParts());
+      this.drawParts(ctx, this.fitParts(), TEE_ID);
     }
 
-    drawParts(ctx, parts) {
+    drawParts(ctx, parts, id = TEE_ID) {
+      const garment = this.garmentFor(id);
       for (const part of parts) {
         ctx.save();
         this.rotateWith(ctx, part.joint);
-        ctx.drawImage(part.image, part.x, part.y);
+        ctx.drawImage(this.coloredImage(part.image, garment.color, this.defaultColor(id)), part.x, part.y);
         ctx.restore();
       }
     }

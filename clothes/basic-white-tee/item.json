@@ -2,6 +2,7 @@
   "id": "basic-white-tee",
   "name": "베이직 화이트 반팔 티셔츠",
   "group": "upper",
+  "color": "#FFFFFF",
   "params": {
     "formality": -3,
     "flamboyance": -3,

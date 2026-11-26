@@ -1,0 +1,88 @@
+/* Reuse the original preview footprint beneath the Dress Room color wheel. */
+.ui-dye-workbench { overflow: hidden; }
+.ui-dye-heading {
+  position: absolute;
+  top: 13px;
+  left: 17px;
+  right: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 29px;
+  line-height: 1.2;
+  font-weight: 650;
+}
+.ui-dye-swatch {
+  width: 29px;
+  height: 29px;
+  flex: none;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  background: var(--dye-color, #fff);
+}
+.ui-dye-canvas {
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  width: 432px;
+  height: 244px;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ui-dye-workbench[data-dye-phase="dyeing"] .ui-dye-canvas {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.ui-dye-canvas:focus-visible {
+  outline: 4px solid #8d7970;
+  outline-offset: -4px;
+}
+.ui-dye-workbench .ui-preview__icon {
+  width: 220px;
+  height: 200px;
+  opacity: .25;
+  transform: translateY(-26px);
+}
+.ui-dye-progress {
+  position: absolute;
+  left: 17px;
+  right: 17px;
+  top: 294px;
+  height: 7px;
+  overflow: hidden;
+  background: #e9e4de;
+  border-radius: 4px;
+}
+.ui-dye-progress > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #7e7164;
+}
+.ui-dye-actions {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  height: 80px;
+  display: flex;
+  gap: 10px;
+}
+.ui-dye-actions button {
+  min-width: 0;
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 31px;
+  font-weight: 650;
+}
+.ui-dye-actions .ui-dye-secondary { background: #fff; }
+.ui-dye-actions button:disabled { opacity: .45; cursor: default; }
+.ui-dye-workbench [hidden] { display: none !important; }
+.ui-colors--dye-locked { opacity: .45; pointer-events: none; }
+.ui-colors--dye-locked * { pointer-events: none !important; }
+@media (prefers-reduced-motion: no-preference) {
+  .ui-dye-progress > span { transition: width .12s ease; }
+}

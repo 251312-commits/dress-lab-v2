@@ -223,34 +223,17 @@
       overlay.querySelectorAll(".ui-outfit-item").forEach(button => {
         button.setAttribute("aria-pressed", String(button === item));
       });
-      document.getElementById("ui-preview-use").setAttribute("href", "#dl2-" + item.dataset.item);
+      document.getElementById("ui-preview-use")?.setAttribute("href", "#dl2-" + item.dataset.item);
       if (item.dataset.item === "none") {
         window.dressLabWardrobe?.unequipAll();
         selectionStatus.textContent = "상의와 하의 착용 해제";
       } else {
         const wearable = wearables[item.dataset.item];
         selectionStatus.textContent = wearable
-          ? wearable.name + " · 체크 버튼으로 착용 변경"
+          ? wearable.name + " · 작업대에서 색 선택"
           : item.getAttribute("aria-label") + " · 신규 의상 준비 중";
       }
       syncOutfitStatus();
-      return;
-    }
-
-    const check = event.target.closest("#ui-preview-check");
-    if (check) {
-      const selected = overlay.querySelector(".ui-outfit-item[aria-pressed='true']")?.dataset.item;
-      const wearable = wearables[selected];
-      if (!wearable) return;
-      const wardrobe = window.dressLabWardrobe;
-      const state = wardrobe?.getItemState(wearable.id);
-      if (!state?.ready) {
-        selectionStatus.textContent = state?.error || "의상 이미지 로딩 중";
-        return;
-      }
-      const next = !state.equipped;
-      wardrobe.setEquipped(next, wearable.id);
-      selectionStatus.textContent = wearable.name + (next ? " 착용" : " 벗기");
       return;
     }
 
@@ -275,6 +258,10 @@
 
   // Stay in sync when the outfit becomes available after the base doll loads.
   function syncOutfitStatus() {
+    if (window.DressLabDyeWorkbench) {
+      window.DressLabDyeWorkbench.sync();
+      return;
+    }
     const selected = overlay.querySelector(".ui-outfit-item[aria-pressed='true']")?.dataset.item;
     const wearable = wearables[selected];
     const check = document.getElementById("ui-preview-check");
@@ -300,5 +287,5 @@
   });
 
   // Interactive HSB handling lives in ui/color-wheel.js.
-  // The picker emits dresslab:color-change for future outfit renderers.
+  // The workbench previews dresslab:color-change; only completed dye is applied.
 })();
