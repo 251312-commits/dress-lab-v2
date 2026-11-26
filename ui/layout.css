@@ -679,13 +679,13 @@
 }
 
 /* Outfit preview: actual vector item art; other category symbols remain mockups. */
-.ui-preview__shirt {
+.ui-preview__garment {
   position: absolute;
   width: 80%;
   height: 78%;
   object-fit: contain;
   pointer-events: none;
 }
-.ui-preview__shirt[hidden] { display: none !important; }
-.ui-preview:has(.ui-preview__shirt:not([hidden])) .ui-preview__icon { visibility: hidden; }
+.ui-preview__garment[hidden] { display: none !important; }
+.ui-preview:has(.ui-preview__garment:not([hidden])) .ui-preview__icon { visibility: hidden; }
 .ui-preview__check:disabled { opacity: .45; cursor: not-allowed; }

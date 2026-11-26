@@ -1,6 +1,5 @@
-/* Dress Lab V2 • UI placement prototype.
- * The base character remains drawn exclusively by index.html.
- * Nothing here changes character pixels, appearance, body proportions or outfits.
+/* Dress Lab V2 • room navigation and wardrobe controls.
+ * The rig and wardrobe own character rendering; UI selects their public state.
  */
 (() => {
   "use strict";
@@ -41,6 +40,10 @@
     ["shoes", "신발"],
     ["none", "착용 해제"]
   ];
+  const wearables = {
+    shirt: { id: "basic-white-tee", name: "베이직 화이트 반팔 티셔츠" },
+    pants: { id: "basic-charcoal-pants", name: "베이직 차콜 긴바지" }
+  };
   const rooms = [
     ["reception", "접수실"],
     ["care", "케어룸"],
@@ -91,8 +94,8 @@
           '<svg class="ui-preview__icon" viewBox="0 0 64 64" aria-hidden="true">',
             '<use id="ui-preview-use" href="#dl2-shirt"></use>',
           '</svg>',
-          '<img id="ui-shirt-preview" class="ui-preview__shirt" src="./clothes/basic-white-tee/preview.svg?v=white-tee-contour-v3" alt="" aria-hidden="true">',
-          '<button type="button" class="ui-preview__check" id="ui-preview-check" aria-label="베이직 화이트 반팔 셔츠 착용 전환" aria-pressed="false">',
+          '<img id="ui-garment-preview" class="ui-preview__garment" src="./clothes/basic-white-tee/preview.svg?v=separates-pants-v1" alt="" aria-hidden="true">',
+          '<button type="button" class="ui-preview__check" id="ui-preview-check" aria-label="베이직 화이트 반팔 티셔츠 불러오는 중" aria-pressed="false" disabled>',
             '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M11 33 L26 48 L53 13"/></svg>',
           '</button>',
         '</section>',
@@ -221,34 +224,33 @@
         button.setAttribute("aria-pressed", String(button === item));
       });
       document.getElementById("ui-preview-use").setAttribute("href", "#dl2-" + item.dataset.item);
-      const isShirt = item.dataset.item === "shirt";
-      const check = document.getElementById("ui-preview-check");
-      check.disabled = !isShirt;
-      check.setAttribute("aria-pressed", String(isShirt && Boolean(window.dressLabWardrobe?.equipped)));
-      document.getElementById("ui-shirt-preview").hidden = !isShirt;
       if (item.dataset.item === "none") {
-        window.dressLabWardrobe?.setEquipped(false);
-        selectionStatus.textContent = "흰색 반팔 셔츠 벗기";
+        window.dressLabWardrobe?.unequipAll();
+        selectionStatus.textContent = "상의와 하의 착용 해제";
       } else {
-        selectionStatus.textContent = isShirt
-          ? "베이직 화이트 반팔 셔츠 · 체크 버튼으로 착용 변경"
+        const wearable = wearables[item.dataset.item];
+        selectionStatus.textContent = wearable
+          ? wearable.name + " · 체크 버튼으로 착용 변경"
           : item.getAttribute("aria-label") + " · 신규 의상 준비 중";
       }
+      syncOutfitStatus();
       return;
     }
 
     const check = event.target.closest("#ui-preview-check");
     if (check) {
       const selected = overlay.querySelector(".ui-outfit-item[aria-pressed='true']")?.dataset.item;
-      if (selected !== "shirt") return;
+      const wearable = wearables[selected];
+      if (!wearable) return;
       const wardrobe = window.dressLabWardrobe;
-      if (!wardrobe?.ready) {
-        selectionStatus.textContent = "셔츠 이미지 로딩 중";
+      const state = wardrobe?.getItemState(wearable.id);
+      if (!state?.ready) {
+        selectionStatus.textContent = state?.error || "의상 이미지 로딩 중";
         return;
       }
-      const next = !wardrobe.equipped;
-      wardrobe.setEquipped(next);
-      selectionStatus.textContent = next ? "흰색 반팔 셔츠 착용" : "흰색 반팔 셔츠 벗기";
+      const next = !state.equipped;
+      wardrobe.setEquipped(next, wearable.id);
+      selectionStatus.textContent = wearable.name + (next ? " 착용" : " 벗기");
       return;
     }
 
@@ -272,15 +274,29 @@
   });
 
   // Stay in sync when the outfit becomes available after the base doll loads.
-  function syncShirtStatus() {
+  function syncOutfitStatus() {
     const selected = overlay.querySelector(".ui-outfit-item[aria-pressed='true']")?.dataset.item;
+    const wearable = wearables[selected];
     const check = document.getElementById("ui-preview-check");
-    check.setAttribute("aria-pressed", String(selected === "shirt" && Boolean(window.dressLabWardrobe?.equipped)));
+    const preview = document.getElementById("ui-garment-preview");
+    const state = wearable && window.dressLabWardrobe?.getItemState(wearable.id);
+    check.disabled = !state?.ready;
+    check.setAttribute("aria-pressed", String(Boolean(state?.equipped)));
+    check.setAttribute("aria-label", wearable
+      ? wearable.name + (state?.error ? " 로드 실패" : !state?.ready ? " 불러오는 중" : " 착용 전환")
+      : "착용할 의상 없음");
+    preview.hidden = !wearable;
+    if (wearable && preview.dataset.item !== wearable.id) {
+      preview.src = "./clothes/" + wearable.id + "/preview.svg?v=separates-pants-v1";
+      preview.dataset.item = wearable.id;
+    }
   }
-  window.addEventListener("dresslab:wardrobe-ready", syncShirtStatus);
-  window.addEventListener("dresslab:wardrobe-change", syncShirtStatus);
+  syncOutfitStatus();
+  window.addEventListener("dresslab:wardrobe-ready", syncOutfitStatus);
+  window.addEventListener("dresslab:wardrobe-change", syncOutfitStatus);
   window.addEventListener("dresslab:wardrobe-error", event => {
     selectionStatus.textContent = event.detail?.message || "의상 로드 실패";
+    syncOutfitStatus();
   });
 
   // Interactive HSB handling lives in ui/color-wheel.js.

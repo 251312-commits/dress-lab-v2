@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="198" height="430" viewBox="128 1540 198 430">
+<!-- The hidden cap extends above the knee; the ankle hem leaves the foot visible. -->
+<path d="M246 1545 C289 1545 321 1579 322 1623 C322 1730 317 1840 318 1956 Q225 1970 133 1956 C134 1847 152 1727 169 1623 C172 1580 205 1545 246 1545 Z" fill="#4C4E58"/>
+<path d="M169 1623 C152 1727 134 1847 133 1956 Q225 1970 318 1956 C317 1840 322 1730 322 1623" fill="none" stroke="#353741" stroke-width="3.1" stroke-linejoin="round"/>
+<path d="M177 1648 C160 1753 145 1854 143 1946" fill="none" stroke="#90929C" stroke-width="1.5" opacity=".43" stroke-linecap="round"/>
+<path d="M246 1661 C240 1753 233 1850 230 1938" fill="none" stroke="#373943" stroke-width="2.5" opacity=".32" stroke-linecap="round"/>
+<path d="M140 1942 Q225 1954 311 1942" fill="none" stroke="#9395A0" stroke-width="1.7" opacity=".63"/>
+<path d="M146 1911 Q162 1923 179 1927 M296 1907 Q284 1925 279 1936" fill="none" stroke="#858792" stroke-width="2.2" opacity=".38" stroke-linecap="round"/>
+</svg>
