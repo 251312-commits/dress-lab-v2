@@ -1,4 +1,4 @@
-// Real mobile browser checks for the preview -> dye -> apply commit boundary.
+// Real mobile browser checks for clothes selection and button-free auto dye.
 // Run: node tests/dye-workbench.cjs
 // Optional: DYE_WORKBENCH_URL, DYE_WORKBENCH_QA, CHROMIUM_PATH.
 const assert = require('node:assert/strict');
@@ -82,7 +82,7 @@ async function chooseHue(degrees) {
 async function touchStroke(points) {
   const box = await page.locator('#ui-dye-canvas').boundingBox();
   const client = point => ({ x: box.x + point.x / 432 * box.width,
-    y: box.y + point.y / 244 * box.height, id: 1 });
+    y: box.y + point.y / 352 * box.height, id: 1 });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [client(points[0])] });
   for (const point of points.slice(1)) {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [client(point)] });
@@ -91,18 +91,19 @@ async function touchStroke(points) {
 }
 
 async function finishWithTouch() {
-  for (const y of [30, 80, 130, 180, 230]) {
+  for (const y of [30, 80, 130, 180, 230, 280, 330]) {
     if ((await state()).phase === 'complete') break;
     await touchStroke(Array.from({ length: 9 }, (_, index) => ({ x: 15 + index * 50, y })));
   }
   assert.equal((await state()).phase, 'complete', 'Sweeping the garment must complete dyeing');
 }
 
-async function finishWithButtons() {
-  for (let press = 0; press < 8 && (await state()).phase === 'dyeing'; press++) {
-    await page.getByRole('button', { name: '색 입히기', exact: true }).click();
+async function finishWithKeyboard() {
+  await page.locator('#ui-dye-canvas').focus();
+  for (let press = 0; press < 16 && (await state()).phase !== 'complete'; press++) {
+    await page.keyboard.press(press % 2 ? 'Space' : 'Enter');
   }
-  assert.equal((await state()).phase, 'complete', 'Button alternative must complete dyeing');
+  assert.equal((await state()).phase, 'complete', 'Keyboard work must auto-apply after complete coverage');
 }
 
 (async () => {
@@ -123,145 +124,152 @@ async function finishWithButtons() {
         .map(name => ({ name, type: 'file' }))) }));
   await page.goto(url + '/?room=dress&idle=0', { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelector('#stage')?.getAttribute('aria-busy') === 'false' &&
-    window.DressLabDyeWorkbench?.getState().ready && window.dressLabWardrobe?.ready &&
-    window.dressLabWardrobe?.pants.ready && window.dressLabEyes, null, { timeout: 30000 });
-  await page.locator('.ui-room-button[data-room="dress"]').click();
-  await page.locator('.ui-outfit-item[data-item="shirt"]').click();
+    window.DressLabDyeWorkbench?.getState().ready && window.DressLabOutfits &&
+    window.dressLabWardrobe?.ready && window.dressLabWardrobe?.pants.ready && window.dressLabEyes,
+    null, { timeout: 30000 });
   await page.evaluate(() => {
     window.__dyeColorEvents = [];
     window.addEventListener('dresslab:wardrobe-change', event => {
       if (event.detail.color) window.__dyeColorEvents.push({ ...event.detail });
     });
   });
-  const primary = page.locator('#ui-dye-select');
-  const secondary = page.locator('#ui-dye-cancel');
+  const tab = name => page.locator('.ui-tabs__button[data-tab="' + name + '"]').click();
+  const card = id => page.locator('.ui-wardrobe-card[data-wardrobe-item="' + id + '"]');
+  const slot = name => page.locator('.ui-outfit-item[data-outfit-slot="' + name + '"]');
+  const slotCanvas = name => '.ui-outfit-item[data-outfit-slot="' + name + '"] canvas';
+  const cardCanvas = id => '.ui-wardrobe-card[data-wardrobe-item="' + id + '"] canvas';
+  const partialStroke = () => touchStroke([{ x: 195, y: 150 }, { x: 220, y: 155 }]);
+  assert.equal(await page.locator('.ui-dye-workbench button').count(), 0,
+    'The workbench must have no selection, paint, cancel or apply buttons');
+  assert.equal(await page.locator('.ui-wardrobe-panel').isVisible(), false);
+  assert.equal(await page.locator('.ui-outfit-item').count(), 6);
+  assert.equal(await page.locator('.ui-outfit-item[data-equipped-item]').count(), 2);
+  assert.equal(await page.locator('.ui-outfit-item:disabled').count(), 4);
+
+  // Clothing choices and wear/remove actions exist only on the clothes tab.
+  await tab('clothes');
+  assert.equal(await page.locator('.ui-wardrobe-panel').isVisible(), true);
+  assert.equal(await page.locator('.ui-colors').isVisible(), false);
+  assert.equal(await page.locator('.ui-dye-workbench').isVisible(), false);
+  assert.equal(await card(TEE).getAttribute('aria-pressed'), 'true');
+  await card(TEE).click();
+  assert.equal((await outfit(TEE)).equipped, false);
+  assert.equal(await slot('upper').isDisabled(), true);
+  assert.equal(await page.locator(slotCanvas('upper')).isVisible(), false);
+  assert.equal(await slot('upper').getAttribute('data-equipped-item'), null);
+  await card(TEE).click();
+  assert.equal((await outfit(TEE)).equipped, true);
+  assert.equal(await slot('upper').getAttribute('data-equipped-item'), TEE);
+  assert.equal(await page.locator(slotCanvas('upper')).isVisible(), true);
+  await snapshot('01-clothes-tab-mobile');
+  await tab('color');
+  await slot('upper').click();
+
   const shirtInitial = await outfit(TEE), pantsInitial = await outfit(PANTS);
   const shirtPixels = await pixels('#character', [180, 950, 300, 320]);
-  const nativePreview = await pixels();
+  const nativePreview = await pixels(), nativeSlot = await pixels(slotCanvas('upper'));
+  const nativeCard = await pixels(cardCanvas(TEE));
   const skinInitial = await page.evaluate(() => window.dressLabSkinTone.getColor());
-  assert.ok(nativePreview.opaque > 1000, 'The preview must contain actual garment artwork');
-  assert.equal(await page.locator('.ui-dye-workbench .ui-preview__icon').isVisible(), false,
-    'The fallback category SVG must be hidden behind a loaded garment');
-  assert.equal(await primary.textContent(), '현재 색');
-  assert.equal(await primary.isDisabled(), true);
+  assert.ok(nativePreview.opaque > 1000, 'Preview contains actual garment artwork');
+  const red = await chooseHue(0), redPreview = await pixels();
+  assert.notEqual(redPreview.hash, nativePreview.hash);
+  assert.deepEqual(await pixels(slotCanvas('upper')), nativeSlot,
+    'Equipped square must show applied color while workbench previews a candidate');
+  assert.deepEqual(await pixels(cardCanvas(TEE)), nativeCard);
+  assert.deepEqual(await outfit(TEE), shirtInitial);
+  assert.deepEqual(await pixels('#character', [180, 950, 300, 320]), shirtPixels);
+  await snapshot('02-dye-preview-mobile');
 
-  const red = await chooseHue(0);
-  const redPreview = await pixels();
-  assert.notEqual(redPreview.hash, nativePreview.hash, 'The wheel must repaint the preview pixels');
-  assert.deepEqual(await outfit(TEE), shirtInitial, 'Previewing must not alter the worn shirt');
-  assert.deepEqual(await pixels('#character', [180, 950, 300, 320]), shirtPixels,
-    'The actual doll shirt pixels must remain unchanged during preview');
-  assert.equal(await page.evaluate(() => window.dressLabSkinTone.getColor()), skinInitial);
-  await snapshot('01-dye-preview-mobile');
-
-  await primary.click();
-  assert.equal((await state()).phase, 'dyeing');
-  assert.deepEqual(await pixels(), nativePreview, 'Dye work must begin with the current worn color');
-  assert.equal(await page.locator('.ui-colors').evaluate(node => node.inert), true);
-  assert.equal(await page.getByRole('button', { name: '적용', exact: true }).count(), 0,
-    'An unfinished garment must not expose Apply');
-  const wheel = await page.locator('.ui-colors .ui-wheel').boundingBox();
-  await page.touchscreen.tap(wheel.x + wheel.width * .08, wheel.y + wheel.height / 2);
-  assert.equal((await state()).targetColor, red, 'The dye target must be frozen while working');
-  assert.equal(await page.evaluate(() => window.DressLabColorWheel.getColor().hex), red);
-  await touchStroke([{ x: 190, y: 105 }, { x: 210, y: 105 }]);
+  await partialStroke();
   const partial = await state(), partialPixels = await pixels();
-  assert.equal(partial.phase, 'dyeing');
-  assert.ok(partial.progress > 0 && partial.progress < 100, 'A short real touch stroke must do partial work');
+  assert.equal(partial.phase, 'dyeing', 'First stroke starts work directly');
+  assert.ok(partial.progress > 0 && partial.progress < 100);
   assert.notEqual(partialPixels.hash, nativePreview.hash);
   assert.notEqual(partialPixels.hash, redPreview.hash);
   assert.deepEqual(await outfit(TEE), shirtInitial);
-  await snapshot('02-dye-partial-mobile');
+  assert.deepEqual(await pixels(slotCanvas('upper')), nativeSlot);
+  assert.equal(await page.locator('.ui-colors').evaluate(node => node.inert), true);
+  const wheel = await page.locator('.ui-colors .ui-wheel').boundingBox();
+  await page.touchscreen.tap(wheel.x + wheel.width * .08, wheel.y + wheel.height / 2);
+  assert.equal((await state()).targetColor, red);
+  assert.equal(await page.evaluate(() => window.DressLabColorWheel.getColor().hex), red);
+  await snapshot('03-dye-partial-mobile');
   await finishWithTouch();
-  assert.equal((await state()).progress, 100);
-  assert.deepEqual(await pixels(), redPreview, 'Completed dye must match the selected preview');
-  assert.deepEqual(await outfit(TEE), shirtInitial, 'Completion still needs an explicit Apply');
-  assert.equal(await primary.textContent(), '적용');
-  await snapshot('03-dye-complete-mobile');
-  await primary.dblclick();
-  assert.equal((await outfit(TEE)).color, red);
+  assert.equal((await outfit(TEE)).color, red, 'Completion must auto-apply without another button');
   assert.equal((await outfit(TEE)).equipped, true);
-  assert.equal((await state()).phase, 'preview');
-  assert.equal(await primary.isDisabled(), true);
-  assert.equal((await colorEvents()).length, 1, 'Rapid duplicate clicks must commit exactly once');
-  assert.notDeepEqual(await pixels('#character', [180, 950, 300, 320]), shirtPixels,
-    'Apply must visibly recolor the real doll');
+  assert.equal((await state()).progress, 100);
+  assert.deepEqual(await pixels(), redPreview);
+  assert.notDeepEqual(await pixels('#character', [180, 950, 300, 320]), shirtPixels);
+  assert.notDeepEqual(await pixels(slotCanvas('upper')), nativeSlot);
+  assert.notDeepEqual(await pixels(cardCanvas(TEE)), nativeCard);
+  assert.equal(await page.locator('.ui-colors').evaluate(node => node.inert), false);
+  assert.equal((await colorEvents()).length, 1);
+  await partialStroke();
+  await page.locator('#ui-dye-canvas').press('Enter');
+  assert.equal((await colorEvents()).length, 1, 'Further same-color input cannot duplicate commits');
   assert.deepEqual(await outfit(PANTS), pantsInitial);
-  await snapshot('04-dye-applied-mobile');
+  const redSlot = await pixels(slotCanvas('upper'));
+  await snapshot('04-dye-auto-applied-mobile');
 
   const cyan = await chooseHue(180);
-  await primary.click();
-  await touchStroke([{ x: 190, y: 105 }, { x: 210, y: 105 }]);
-  await secondary.click();
+  await partialStroke();
+  await tab('clothes');
   assert.equal((await state()).phase, 'preview');
-  assert.equal((await state()).previewColor, cyan);
-  assert.equal((await outfit(TEE)).color, red, 'Cancel must preserve the applied color');
-  assert.equal(await page.locator('.ui-colors').evaluate(node => node.inert), false);
-
-  await primary.click();
-  await page.locator('.ui-room-button[data-room="magic"]').click();
-  assert.equal((await state()).phase, 'preview', 'Leaving the room must cancel unfinished work');
   assert.equal((await state()).targetColor, null);
+  assert.equal((await outfit(TEE)).color, red);
+  assert.deepEqual(await pixels(slotCanvas('upper')), redSlot);
+  await tab('color');
+  assert.equal((await state()).previewColor, cyan);
+  await partialStroke();
+  await page.locator('.ui-room-button[data-room="magic"]').click();
+  assert.equal((await state()).phase, 'preview');
   const dressDraft = (await state()).previewColor;
-  await page.locator('[data-magic-tab="skin"]').click();
+  await page.locator('.ui-tabs__button[data-tab="skin"]').click();
   await page.locator('.ui-magic-skin-panel [data-channel="s"] input').focus();
   await page.keyboard.press('End');
   await page.waitForFunction(old => window.dressLabSkinTone.getColor() !== old, skinInitial);
-  assert.equal((await state()).previewColor, dressDraft, 'Skin input must not alter the dress candidate');
+  assert.equal((await state()).previewColor, dressDraft);
   assert.equal((await outfit(TEE)).color, red);
   await page.evaluate(hex => window.DressLabSkinColorWheel.setHex(hex), skinInitial);
   await page.locator('.ui-room-button[data-room="dress"]').click();
-  assert.equal((await state()).previewColor, cyan, 'Returning keeps the candidate but not partial dye');
-
-  await primary.click();
-  await page.locator('.ui-outfit-item[data-item="pants"]').click();
+  assert.equal((await state()).previewColor, cyan);
+  await partialStroke();
+  await slot('lower').click();
   assert.equal((await state()).itemId, PANTS);
-  assert.equal((await state()).phase, 'preview', 'Changing garments must cancel the old dye job');
+  assert.equal((await state()).phase, 'preview');
   assert.equal((await outfit(TEE)).color, red);
-  assert.equal((await state()).previewColor, pantsInitial.color);
-  const eventsBeforeEquip = (await colorEvents()).length;
-  await secondary.click();
-  assert.equal((await outfit(PANTS)).equipped, false);
-  assert.equal(await primary.textContent(), '착용');
-  await primary.click();
-  assert.equal((await outfit(PANTS)).equipped, true);
-  assert.equal((await state()).phase, 'preview', 'A saved same color must re-equip without dye work');
-  assert.equal((await colorEvents()).length, eventsBeforeEquip);
 
   const pantsColor = await chooseHue(270);
-  await primary.click();
-  const keyboardCanvas = page.locator('#ui-dye-canvas');
-  await keyboardCanvas.focus();
-  await page.keyboard.press('Enter');
-  assert.ok((await state()).progress > 0, 'Keyboard input must perform real dye work');
+  await page.locator('#ui-dye-canvas').press('Enter');
+  assert.ok((await state()).progress > 0);
   assert.equal((await outfit(PANTS)).color, pantsInitial.color);
-  await finishWithButtons();
-  assert.equal((await outfit(PANTS)).color, pantsInitial.color);
-  await primary.click();
+  await finishWithKeyboard();
   assert.equal((await outfit(PANTS)).color, pantsColor);
-  assert.equal((await outfit(TEE)).color, red, 'Pants dye must not recolor the shirt');
-  await snapshot('05-dye-pants-mobile');
-
-  // A finished but unapplied result is cancellable; re-dyeing always returns
-  // to original source shading rather than compounding already dyed pixels.
-  await page.locator('.ui-outfit-item[data-item="shirt"]').click();
-  assert.equal((await state()).previewColor, cyan);
-  await primary.click();
-  await finishWithButtons();
-  assert.equal(await secondary.textContent(), '다시 고르기');
-  await secondary.click();
   assert.equal((await outfit(TEE)).color, red);
-  await primary.click();
-  await finishWithButtons();
-  await primary.click();
+  const beforeWear = (await colorEvents()).length;
+  await tab('clothes');
+  await card(PANTS).click();
+  assert.equal((await outfit(PANTS)).equipped, false);
+  assert.equal(await slot('lower').isDisabled(), true);
+  assert.equal(await page.locator(slotCanvas('lower')).isVisible(), false);
+  await card(PANTS).click();
+  await tab('color');
+  assert.equal((await outfit(PANTS)).equipped, true);
+  assert.equal((await outfit(PANTS)).color, pantsColor);
+  await partialStroke();
+  assert.equal((await state()).phase, 'preview', 'Same-color wearing needs no dye work');
+  assert.equal((await colorEvents()).length, beforeWear);
+  await snapshot('05-equipped-colors-mobile');
+
+  await slot('upper').click();
+  assert.equal((await state()).previewColor, cyan);
+  await finishWithKeyboard();
   assert.equal((await outfit(TEE)).color, cyan);
   await chooseHue(0);
-  assert.deepEqual(await pixels(), redPreview, 'Re-dye preview must reproduce the original red pixels exactly');
-  await primary.click();
-  await finishWithButtons();
-  await primary.click();
+  assert.deepEqual(await pixels(), redPreview, 'Repeated dye starts from original art');
+  await finishWithKeyboard();
   assert.equal((await outfit(TEE)).color, red);
-  assert.deepEqual(await pixels(), redPreview);
+  assert.deepEqual(await pixels(slotCanvas('upper')), redSlot);
   assert.equal((await outfit(PANTS)).color, pantsColor);
   assert.equal(await page.evaluate(() => window.dressLabSkinTone.getColor()), skinInitial);
   assert.deepEqual(errors, [], 'There must be no uncaught browser errors');
@@ -270,9 +278,9 @@ async function finishWithButtons() {
   const report = { viewport: '390x844 touch', red, cyan, pantsColor,
     colorCommits: (await colorEvents()).length, missing: [...missing], pageErrors: errors };
   if (qa) fs.writeFileSync(path.join(qa, 'dye-workbench-result.json'), JSON.stringify(report, null, 2));
-  console.log('PASS: real mobile wheel preview; unchanged doll before apply; touch coverage and completion;');
-  console.log('locked picker, explicit commit and duplicate protection; cancel/room/item changes;');
-  console.log('independent garments and skin; same-color re-equip; keyboard/button controls; source-based re-dye.');
+  console.log('PASS: separated clothes tab; actual equipped thumbnails; candidate isolation;');
+  console.log('button-free first-stroke dye and one automatic commit; tab/room/item cancellation;');
+  console.log('independent garment/skin colors, keyboard access, same-color re-equip and source-based re-dye.');
   console.log(JSON.stringify(report));
 })().catch(async error => {
   console.error(error);

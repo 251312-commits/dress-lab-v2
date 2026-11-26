@@ -118,8 +118,8 @@
         (id === PANTS_ID ? "#4C4E58" : "#FFFFFF");
     }
 
-    // This is the commit boundary. Previewing and dyeing never call it; the
-    // workbench calls it only after the player completes dyeing and applies.
+    // Preview and partial brush strokes never commit a color. The workbench
+    // calls this once when the player finishes dyeing the equipped garment.
     setDyeColor(hex, id = TEE_ID) {
       const garment = this.garmentFor(id), next = normalizeColor(hex);
       if (!garment?.ready || !next) return false;

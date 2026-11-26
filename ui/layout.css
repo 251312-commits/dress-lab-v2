@@ -142,7 +142,7 @@
 .ui-tabs__button:nth-child(2) { height: 174px; }
 .ui-tabs__button:nth-child(3) { height: 180px; }
 
-/* Color tools: circular wheel, hex and HSB sliders. Presently UI-only. */
+/* Color tools: circular wheel, hex and HSB sliders for the dye workbench. */
 .ui-colors {
   position: absolute;
   left: 15px;
@@ -294,27 +294,10 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.ui-preview__check {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  width: 100px;
-  height: 106px;
-  display: grid;
-  place-items: center;
-  background: #fff !important;
+.ui-scene[data-room="dress"]:not([data-dress-tab="color"]) .ui-colors,
+.ui-scene[data-room="dress"]:not([data-dress-tab="color"]) .ui-preview {
+  display: none;
 }
-.ui-preview__check[aria-pressed="true"] { background: var(--selected) !important; }
-.ui-preview__check svg {
-  width: 64px;
-  height: 64px;
-  fill: none;
-  stroke: var(--line);
-  stroke-width: 5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.ui-preview__check[aria-pressed="false"] svg { opacity: .15; }
 
 .ui-outfit-heading {
   position: absolute;
@@ -340,20 +323,19 @@
   height: 172px;
   display: grid;
   place-items: center;
+  padding: 0;
   background: #fff !important;
 }
 .ui-outfit-item[aria-pressed="true"] { background: var(--selected) !important; }
-.ui-outfit-item svg {
+.ui-outfit-item__art {
   display: block;
-  width: 102px;
-  height: 105px;
-  color: var(--line);
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 3px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  width: 126px;
+  height: 156px;
+  pointer-events: none;
 }
+.ui-outfit-item__art[hidden] { display: none; }
+.ui-outfit-item:disabled { border-color: #b8b1aa; cursor: default; }
+.ui-outfit-item[aria-pressed="true"] { box-shadow: inset 0 0 0 3px #8a7f75; }
 
 /* Fixed action row and room dock, anchored in the source coordinate plane. */
 .ui-actions {
@@ -677,15 +659,3 @@
   font-size: 19px;
   line-height: 1.2;
 }
-
-/* Outfit preview: actual vector item art; other category symbols remain mockups. */
-.ui-preview__garment {
-  position: absolute;
-  width: 80%;
-  height: 78%;
-  object-fit: contain;
-  pointer-events: none;
-}
-.ui-preview__garment[hidden] { display: none !important; }
-.ui-preview:has(.ui-preview__garment:not([hidden])) .ui-preview__icon { visibility: hidden; }
-.ui-preview__check:disabled { opacity: .45; cursor: not-allowed; }

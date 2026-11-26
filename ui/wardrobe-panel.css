@@ -1,0 +1,85 @@
+/* Wardrobe browsing occupies the former color/workbench space, while the
+ * six equipped slots stay in their original lower positions in both tabs. */
+.ui-wardrobe-panel {
+  display: none;
+  position: absolute;
+  top: 112px;
+  left: 24px;
+  right: 24px;
+  height: 1084px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+}
+.ui-scene[data-room="dress"][data-dress-tab="clothes"] .ui-wardrobe-panel { display: block; }
+.ui-wardrobe-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 34px;
+}
+.ui-wardrobe-heading h2 {
+  margin: 0;
+  font-size: 46px;
+  line-height: 1.2;
+}
+.ui-wardrobe-heading button {
+  min-height: 70px;
+  padding: 7px 14px;
+  font-size: 27px;
+  background: #fff;
+}
+.ui-wardrobe-catalog {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.ui-wardrobe-card {
+  position: relative;
+  min-width: 0;
+  min-height: 434px;
+  padding: 10px 4px 18px;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  background: #fff !important;
+}
+.ui-wardrobe-card[aria-pressed="true"] { background: #f2efeb !important; }
+.ui-wardrobe-card__art {
+  display: block;
+  width: 100%;
+  height: 320px;
+  pointer-events: none;
+}
+.ui-wardrobe-card__art[hidden] { visibility: hidden; display: block; }
+.ui-wardrobe-card__name {
+  margin-top: 8px;
+  font-size: 31px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.ui-wardrobe-card__state { font-size: 22px; margin-top: 8px; }
+.ui-wardrobe-card__state:empty { display: none; }
+.ui-wardrobe-card__check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 38px;
+  height: 38px;
+  border: 3px solid var(--line);
+  background: #fff;
+}
+.ui-wardrobe-card__check svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ui-wardrobe-card[aria-pressed="false"] .ui-wardrobe-card__check svg { visibility: hidden; }
+.ui-wardrobe-panel button:disabled { opacity: .45; cursor: default; }
