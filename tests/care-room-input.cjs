@@ -48,7 +48,10 @@ function fixture(initial = { selectedTool: 'cleanser', overallProgress: 0 }) {
       for (let node = this; node; node = node.parentElement) if (node.kind === matches[selector]) return node;
       return null;
     }
-    querySelector(selector) { return nodes[selector] || null; }
+    querySelector(selector) {
+      return this.kind === 'tool' && selector === '.ui-care-tool__art img'
+        ? this.image || null : nodes[selector] || null;
+    }
     querySelectorAll(selector) {
       if (selector === '.ui-care-tool') return viewport.children.map(slot => slot.children[0]);
       if (selector === '.ui-care-tab') return this.tabs || [];
@@ -59,11 +62,17 @@ function fixture(initial = { selectedTool: 'cleanser', overallProgress: 0 }) {
     set innerHTML(value) {
       this.html = value;
       if (this.kind === 'viewport') {
-        this.children = [...value.matchAll(/data-care-tool="([^"]+)"/g)].map((match, index) => {
+        this.children = [...value.matchAll(/<button\b[^>]*data-care-tool="([^"]+)"[^>]*>([\s\S]*?)<\/button>/g)].map((match, index) => {
           const slot = new Node('slot'), button = new Node('tool');
           slot.offsetLeft = index * 1030 / 3; slot.offsetWidth = 1030 / 3;
           slot.parentElement = this; button.parentElement = slot;
-          button.dataset.careTool = match[1]; slot.children = [button]; return slot;
+          button.dataset.careTool = match[1];
+          const src = match[2].match(/<img\s+src="([^"]+)"/)?.[1];
+          if (src) {
+            button.image = new Node('image'); button.image.parentElement = button;
+            button.image.setAttribute('src', src);
+          }
+          slot.children = [button]; return slot;
         });
       } else if (this.kind === 'care') {
         this.tabs = [...value.matchAll(/data-care-tab="([^"]+)"/g)].map(match => {
@@ -346,4 +355,38 @@ for (const type of ['mouse', 'touch', 'pen']) {
   assert.equal(app.basin.hidden, false);
   assert.ok(app.careRoom.innerHTML.includes('./assets/care/facial/basin.png'));
 }
-console.log('Care-room input tests passed: gesture axes/cancellation, keyboard, honest overall percentages, and basin visibility/wetting order.');
+{
+  const dry = './assets/care/facial/towel.png', wet = './assets/care/facial/towel-wet.png';
+  const app = towelFixture();
+  const image = () => app.tool('towel').querySelector('.ui-care-tool__art img');
+  const originalImage = image();
+  const otherTools = ['cleanser', 'serum', 'cream', 'roller'];
+  const otherPaths = otherTools.map(id => app.tool(id).querySelector('.ui-care-tool__art img').getAttribute('src'));
+  assert.equal(image().getAttribute('src'), dry);
+  app.viewport.scrollLeft = 343; app.scrollCalls.length = 0;
+  app.fire(app.basin, 'click', { detail: 0 });
+  assert.equal(image().getAttribute('src'), wet, 'wet acknowledgement swaps the shelf towel artwork');
+  assert.equal(image(), originalImage, 'wetness updates the existing image without rebuilding the tool');
+  assert.equal(app.api.selectedTool, 'towel');
+  assert.equal(app.viewport.scrollLeft, 343);
+  assert.equal(app.scrollCalls.length, 0);
+  assert.deepEqual(otherTools.map(id => app.tool(id).querySelector('.ui-care-tool__art img').getAttribute('src')), otherPaths);
+  app.api.setTool('serum', { reveal: false });
+  app.fire(app.window, 'dresslab:facial-state', { detail: { selectedTool: 'serum', towelWet: false } });
+  assert.equal(image().getAttribute('src'), dry, 'engine drying on another selected tool restores dry artwork');
+  assert.equal(app.api.selectedTool, 'serum');
+
+  const restored = fixture({ selectedTool: 'towel', towelWet: true, overallProgress: 0 });
+  const restoredSrc = () => restored.tool('towel').querySelector('.ui-care-tool__art img').getAttribute('src');
+  assert.equal(restoredSrc(), wet, 'fresh module initialization renders restored wet state');
+  assert.ok(restored.viewport.innerHTML.includes(wet), 'initial markup requests the wet asset directly');
+  restored.api.setTab('hair'); restored.api.setTab('facial');
+  assert.equal(restoredSrc(), wet, 'returning to facial rebuilds the image from current wet state');
+  assert.equal(restored.api.selectedTool, 'towel');
+  restored.api.setTab('hair');
+  restored.fire(restored.window, 'dresslab:facial-state', { detail: { towelWet: false } });
+  restored.api.setTab('facial');
+  assert.equal(restoredSrc(), dry, 'a dry state received on another tab is reflected on return');
+  assert.ok(restored.viewport.innerHTML.includes(dry));
+}
+console.log('Care-room input tests passed: gesture axes/cancellation, keyboard, overall percentages, basin wetting, and dry/wet towel artwork.');
