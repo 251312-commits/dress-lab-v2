@@ -437,3 +437,27 @@
   outline: 7px solid #426e8f;
   outline-offset: 6px;
 }
+
+/* Provisional makeup shelf: the existing three slots remain in place. */
+.ui-care-talk[hidden] { display: none !important; }
+.ui-care-room[data-care-tab="facial"][data-facial-phase="makeup"]::before {
+  content: "메이크업";
+  position: absolute; top: 24px; left: 0; right: 0;
+  text-align: center; color: #4d6157; font-size: 42px; font-weight: 650;
+  pointer-events: none;
+}
+.ui-care-room[data-care-tab="facial"][data-facial-phase="makeup"] .ui-care-tool {
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  gap: 12px; font-size: 37px !important; font-family: inherit !important;
+  border: 0 !important; border-radius: 22px !important; background: #fff !important;
+  box-shadow: none;
+}
+.ui-care-room[data-care-tab="facial"][data-facial-phase="makeup"] .ui-care-tool[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 7px #92aa9d;
+}
+.ui-makeup-swatch {
+  display: block; width: 150px; height: 150px; border-radius: 50%;
+  background: var(--swatch, #d77e91); box-shadow: inset 0 0 0 5px rgba(60,30,40,.08);
+}
+[data-care-tool="peach"] .ui-makeup-swatch { --swatch: #e6a17e; }
+[data-care-tool="berry"] .ui-makeup-swatch { --swatch: #b76c9b; }

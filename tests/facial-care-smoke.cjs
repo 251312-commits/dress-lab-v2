@@ -105,9 +105,10 @@ function setup({ storage = new Map(), blockedStorage = false, rect, shape: chang
   care.bind(rig, shape);
   assert.equal(care.getState().active, false, 'Hair tab must not activate facial input');
   window.DressLabCareRoom.setTab('facial');
-  assert.equal(care.getState().active, true);
-  assert.equal(canvas.getAttribute('role'), 'button');
-  assert.equal(canvas.tabIndex, 0);
+  const interactive = care.getState().phase !== 'makeup';
+  assert.equal(care.getState().active, interactive);
+  assert.equal(canvas.getAttribute('role'), interactive ? 'button' : 'img');
+  if (interactive) assert.equal(canvas.tabIndex, 0);
   const advance = (ms = 80) => { now += ms; };
   const key = (key = 'Enter', repeat = false) => { advance(); canvas.dispatchEvent({ type: 'keydown', key, repeat }); };
   function pointer(type, point, extra = {}, elapsed = 80) {
@@ -832,3 +833,58 @@ console.log('tool-only towel/roller; accelerated, time-aware, subpixel-safe work
 console.log('residue-aware progress, wet-only finite cleanup, product fading with no permanent wash;');
 console.log('cancellation/transforms, v4 persistence and old-save migration, keyboard and reset isolation;');
 console.log('keyboard split, no auto-selection, appearance-safe reset, storage fallback and head→care→eyes.');
+
+// Customer lifecycle: the UI calls finishPhase only after the current stroke.
+{
+  const storage = new Map([[STORE, JSON.stringify(fullSave)]]);
+  const cycle = setup({ storage });
+  assert.equal(cycle.care.getState().phase, 'initial');
+  cycle.pointer('pointerdown', point);
+  assert.equal(cycle.care.finishPhase(), false, 'Do not switch during a stroke');
+  cycle.pointer('pointerup', point);
+  assert.equal(cycle.care.finishPhase(), true);
+  assert.equal(cycle.care.getState().phase, 'makeup');
+  assert.equal(cycle.care.selectMakeup('rose'), true);
+  assert.deepEqual(plain(cycle.care.getState().makeupAlpha), [1, 1]);
+  cycle.window.DressLabCareRoom.setTab('hair');
+  cycle.window.DressLabCareRoom.setTab('facial');
+  assert.equal(cycle.care.getState().phase, 'makeup', 'Tabs are not room exits');
+  const makeupReload = setup({ storage });
+  assert.equal(makeupReload.care.getState().makeup, 'rose');
+  assert.equal(makeupReload.care.getState().phase, 'makeup');
+  cycle.window.DressLabRooms.setRoom('dress');
+  cycle.window.DressLabRooms.setRoom('care');
+  assert.equal(cycle.care.getState().phase, 'removal');
+  assert.equal(cycle.care.getState().towelWet, false);
+  cycle.toolKey('towel');
+  assert.equal(cycle.care.getState().removalProgress, 0, 'Dry towel cannot remove makeup');
+  cycle.wet(); cycle.toolKey('towel');
+  assert.ok(cycle.care.getState().removalProgress > 0);
+  assert.ok(cycle.care.getState().removalProgress < 1);
+  const removalReload = setup({ storage });
+  assert.equal(removalReload.care.getState().phase, 'removal');
+  assert.equal(removalReload.care.getState().removalProgress, cycle.care.getState().removalProgress);
+  for (let i = 0; i < 50 && removalReload.care.getState().removalProgress < 1; i++) removalReload.toolKey('towel');
+  assert.equal(removalReload.care.getState().removalProgress, 1);
+  assert.equal(removalReload.care.finishPhase(), true);
+  assert.equal(removalReload.care.getState().phase, 'makeup');
+  assert.equal(removalReload.care.getState().makeup, null);
+  assert.equal(removalReload.care.getState().overallProgress, 1, 'Initial care is never reset by removal');
+  removalReload.care.reset();
+  assert.equal(removalReload.care.getState().phase, 'makeup');
+  assert.equal(removalReload.care.selectMakeup('peach'), true);
+  assert.equal(removalReload.care.setCustomer('client-02'), true);
+  assert.equal(removalReload.care.getState().phase, 'initial');
+  assert.equal(removalReload.care.getState().overallProgress, 0);
+  assert.equal(removalReload.care.getState().makeup, null);
+  removalReload.toolKey('cleanser');
+  assert.ok(material(removalReload.care.getState().products.cleanser) > 0);
+  const newCustomerReload = setup({ storage });
+  assert.equal(newCustomerReload.care.getState().customerId, 'client-02');
+  assert.ok(material(newCustomerReload.care.getState().products.cleanser) > 0);
+  newCustomerReload.care.setCustomer('temporary-customer');
+  assert.equal(newCustomerReload.care.getState().phase, 'makeup');
+  assert.equal(newCustomerReload.care.getState().makeup, 'peach');
+  assert.equal(newCustomerReload.care.getState().overallProgress, 1);
+}
+console.log('PASS: customer-scoped care, one-time completion, makeup, removal, and reload isolation.');

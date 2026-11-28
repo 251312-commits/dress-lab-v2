@@ -390,3 +390,38 @@ for (const type of ['mouse', 'touch', 'pen']) {
   assert.ok(restored.viewport.innerHTML.includes(dry));
 }
 console.log('Care-room input tests passed: gesture axes/cancellation, keyboard, overall percentages, basin wetting, and dry/wet towel artwork.');
+
+{
+  const app = fixture();
+  const engine = app.window.DressLabFacialCare;
+  let calls = 0, picked = null;
+  engine.finishPhase = () => { calls++; return true; };
+  engine.selectMakeup = id => { picked = id; return true; };
+  const publish = detail => app.fire(app.window, 'dresslab:facial-state', { detail });
+  publish({ phase: 'initial', active: true, overallProgress: 1 });
+  assert.equal(calls, 1);
+  publish({ phase: 'makeup', active: false, overallProgress: 1 });
+  assert.equal(app.careRoom.dataset.facialPhase, 'makeup');
+  assert.equal(app.nodes['.ui-facial-overall'].hidden, true);
+  assert.equal(app.nodes['#ui-care-talk'].hidden, true);
+  assert.equal(app.viewport.querySelectorAll('.ui-care-tool').length, 3);
+  app.fire(app.tool('rose'), 'click', { detail: 0 });
+  assert.equal(picked, 'rose');
+  assert.equal(app.api.selectedTool, 'rose');
+  app.api.setTab('hair');
+  app.scene.dataset.room = 'dress';
+  app.fire(app.window, 'dresslab:room-change', { detail: { room: 'dress' } });
+  publish({ phase: 'removal', selectedTool: 'towel', removalProgress: 0, active: false });
+  app.scene.dataset.room = 'care';
+  app.fire(app.window, 'dresslab:room-change', { detail: { room: 'care' } });
+  assert.equal(app.api.currentTab, 'facial');
+  assert.equal(app.viewport.querySelectorAll('.ui-care-tool').length, 1);
+  assert.equal(app.api.selectedTool, 'towel');
+  assert.equal(app.nodes['.ui-care-basin'].hidden, false);
+  publish({ phase: 'removal', selectedTool: 'towel', removalProgress: 1, active: true });
+  assert.equal(calls, 2);
+  publish({ phase: 'makeup', makeup: null, active: false, overallProgress: 1 });
+  assert.equal(app.viewport.querySelectorAll('.ui-care-tool').length, 3);
+  assert.equal(app.api.selectedTool, null);
+}
+console.log('PASS: facial UI transitions and makeup selection.');
