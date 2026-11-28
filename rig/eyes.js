@@ -13,6 +13,10 @@
     highlights: "./assets/eyes/Eyes01_Highlights.PNG",
     eyelashes: "./assets/eyes/Eyes01_Eyelashes.PNG"
   });
+  const FACE_BOUNDS = Object.freeze({ left: 135, right: 523 });
+  const DEFAULT_SHAPE = Object.freeze({ id: "eyes01", label: "기본", box: BOX, eye: EYE,
+    sources: SOURCES, faceBounds: FACE_BOUNDS, defaultColor: "#9F2C3E" });
+  const APPEARANCE_LIMITS = Object.freeze({ eyeSize: [75, 125], eyeSpacing: [75, 125] });
   const BLINK_DEPTH = 0.8;
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
   const easeOut = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
@@ -35,17 +39,17 @@
   // Read each registered PNG's alpha once at load time. No pixel readbacks
   // occur during gaze animation.
   function readAlpha(sprite) {
-    const data = sprite.getContext("2d").getImageData(0, 0, BOX.w, BOX.h).data;
-    const alpha = new Uint8Array(BOX.w * BOX.h);
+    const data = sprite.getContext("2d").getImageData(0, 0, sprite.width, sprite.height).data;
+    const alpha = new Uint8Array(sprite.width * sprite.height);
     for (let i = 0; i < alpha.length; i++) alpha[i] = data[i * 4 + 3];
     return alpha;
   }
 
-  function alphaBounds(alpha, from, to) {
-    let x0 = to, x1 = from, y0 = BOX.h, y1 = 0;
-    for (let y = 0; y < BOX.h; y++) {
+  function alphaBounds(alpha, from, to, box) {
+    let x0 = to, x1 = from, y0 = box.h, y1 = 0;
+    for (let y = 0; y < box.h; y++) {
       for (let x = from; x < to; x++) {
-        if (alpha[y * BOX.w + x] < 8) continue;
+        if (alpha[y * box.w + x] < 8) continue;
         x0 = Math.min(x0, x); x1 = Math.max(x1, x + 1);
         y0 = Math.min(y0, y); y1 = Math.max(y1, y + 1);
       }
@@ -57,8 +61,8 @@
 
   // Two-pass chamfer distance to the non-opaque interior boundary.
   // A conservative factor and pixel margin below correct diagonal error.
-  function distanceField(alpha) {
-    const w = BOX.w, h = BOX.h, d = new Float32Array(w * h), diag = Math.SQRT2;
+  function distanceField(alpha, box) {
+    const w = box.w, h = box.h, d = new Float32Array(w * h), diag = Math.SQRT2;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i = y * w + x;
@@ -82,14 +86,14 @@
     return d;
   }
 
-  function clearance(field, x, y) {
+  function clearance(field, x, y, box) {
     // Bilinear sampling in pixel-centre coordinates.
     const u = x - 0.5, v = y - 0.5;
     const ix = Math.floor(u), iy = Math.floor(v);
-    if (ix < 0 || iy < 0 || ix >= BOX.w - 1 || iy >= BOX.h - 1) return 0;
-    const fx = u - ix, fy = v - iy, i = iy * BOX.w + ix;
+    if (ix < 0 || iy < 0 || ix >= box.w - 1 || iy >= box.h - 1) return 0;
+    const fx = u - ix, fy = v - iy, i = iy * box.w + ix;
     const a = field[i] * (1 - fx) + field[i + 1] * fx;
-    const b = field[i + BOX.w] * (1 - fx) + field[i + BOX.w + 1] * fx;
+    const b = field[i + box.w] * (1 - fx) + field[i + box.w + 1] * fx;
     return Math.max(0, (a * (1 - fy) + b * fy) * 0.9 - 1);
   }
 
@@ -97,8 +101,8 @@
     // Inverse of the exact drawing transform of this eye's pupil.
     const px = eye.pupil.cx + (x - eye.pupil.cx - dx) / sx;
     const py = eye.pupil.cy + (y - eye.pupil.cy - dy) / sy;
-    return Math.min(clearance(masks.sclera, x, y),
-      clearance(masks.pupil, px, py) * Math.min(sx, sy));
+    return Math.min(clearance(masks.sclera, x, y, masks.box),
+      clearance(masks.pupil, px, py, masks.box) * Math.min(sx, sy));
   }
 
   function fitHighlight(eye, masks, preferredX, preferredY, dx, dy, sx, sy, size) {
@@ -157,6 +161,15 @@
       this.canvas = canvas;
       this.bodyShape = null;
       this.motion = null;
+      this.box = { ...BOX };
+      this.eye = { ...EYE };
+      this.faceBounds = { ...FACE_BOUNDS };
+      this.appearance = { eyeSize: 100, eyeSpacing: 100, eyeColor: null, eyeShape: "eyes01" };
+      this.limits = APPEARANCE_LIMITS;
+      this.shapeRequest = 0;
+      this.disposed = false;
+      this.sourcePupil = null;
+      this.pupilPixels = null;
       this.sprites = null;
       this.irisBuffer = null;
       this.irisContext = null;
@@ -205,8 +218,142 @@
       };
     }
 
-    async load() {
-      const entries = await Promise.all(Object.entries(SOURCES).map(async ([name, src]) => {
+    getAppearance() { return { ...this.appearance }; }
+
+    getShapes() {
+      const entries = window.DressLabEyeShapes;
+      const seen = new Set();
+      const shapes = Array.isArray(entries) ? entries.filter(shape => {
+        if (!shape || typeof shape !== "object" || typeof shape.id !== "string" ||
+            !shape.id.trim() || typeof shape.label !== "string" || !shape.label.trim() ||
+            seen.has(shape.id)) return false;
+        seen.add(shape.id);
+        return true;
+      }) : [];
+      return shapes.length ? shapes : [DEFAULT_SHAPE];
+    }
+
+    setAppearance(patch) {
+      if (!patch || typeof patch !== "object" || this.disposed) return false;
+      const next = { ...this.appearance };
+      for (const [key, [min, max]] of Object.entries(APPEARANCE_LIMITS)) {
+        if (patch[key] === undefined) continue;
+        const value = Number(patch[key]);
+        if (!Number.isFinite(value)) return false;
+        next[key] = Math.round(clamp(value, min, max));
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, "eyeColor")) {
+        if (patch.eyeColor === null) next.eyeColor = null;
+        else {
+          const match = /^#([0-9a-f]{6})$/i.exec(String(patch.eyeColor));
+          if (!match) return false;
+          next.eyeColor = "#" + match[1].toUpperCase();
+        }
+      }
+      const colorChanged = next.eyeColor !== this.appearance.eyeColor;
+      let tinted = null;
+      try {
+        if (this.eyeParts) this.constrainSpacing(next, this.eyeParts, this.box, this.faceBounds);
+        if (colorChanged && this.sprites) {
+          tinted = this.tintPupil(this.sourcePupil, this.box, next.eyeColor, this.pupilPixels);
+        }
+      } catch (error) {
+        console.warn("눈 색을 적용하지 못했어:", error);
+        return false;
+      }
+      this.appearance = next;
+      if (tinted) {
+        this.sprites.pupil = tinted.sprite;
+        this.pupilPixels = tinted.pixels;
+      }
+      this.layerKey = null;
+      this.rig.render();
+      return true;
+    }
+
+    constrainSpacing(appearance, parts, box, bounds) {
+      const size = appearance.eyeSize / 100;
+      const left = parts[0], right = parts[1];
+      const centre = box.x + (left.sclera.cx + right.sclera.cx) / 2;
+      const halfDistance = (right.sclera.cx - left.sclera.cx) / 2;
+      const leftInner = Math.max(left.sclera.x1, left.eyelashes.x1) - left.sclera.cx;
+      const rightInner = right.sclera.cx - Math.min(right.sclera.x0, right.eyelashes.x0);
+      const leftOuter = left.sclera.cx - Math.min(left.sclera.x0, left.eyelashes.x0);
+      const rightOuter = Math.max(right.sclera.x1, right.eyelashes.x1) - right.sclera.cx;
+      const nearest = ((leftInner + rightInner) * size / 2 + 6) / halfDistance * 100;
+      const farthest = Math.min(centre - bounds.left - leftOuter * size,
+        bounds.right - centre - rightOuter * size) / halfDistance * 100;
+      const low = Math.max(APPEARANCE_LIMITS.eyeSpacing[0], Math.ceil(nearest));
+      const high = Math.min(APPEARANCE_LIMITS.eyeSpacing[1], Math.floor(farthest));
+      if (high < low) throw new Error("이 눈 모양은 현재 크기로 얼굴 안에 배치할 수 없어");
+      appearance.eyeSpacing = clamp(appearance.eyeSpacing, low, high);
+      return appearance;
+    }
+
+    // Tint only the iris layer. Original alpha and the source light/dark
+    // pattern survive every edit, and null restores the exact source canvas.
+    tintPupil(sourcePupil, box, color, cachedPixels) {
+      if (color === null) return { sprite: sourcePupil, pixels: cachedPixels };
+      const { w, h } = box;
+      const pupilPixels = cachedPixels || sourcePupil.getContext("2d").getImageData(0, 0, w, h);
+      const tinted = document.createElement("canvas");
+      tinted.width = w; tinted.height = h;
+      const ctx = tinted.getContext("2d");
+      if (!ctx) throw new Error("눈 색상용 Canvas를 사용할 수 없어");
+      const data = ctx.createImageData(w, h);
+      data.data.set(pupilPixels.data);
+      const pixels = data.data, source = pupilPixels.data;
+      const histogram = new Uint32Array(256);
+      let count = 0;
+      for (let i = 0; i < source.length; i += 4) {
+        if (source[i + 3] < 160) continue;
+        histogram[Math.max(source[i], source[i + 1], source[i + 2])]++;
+        count++;
+      }
+      let reference = 159, cumulative = 0;
+      for (let i = 0; i < 256 && count; i++) {
+        cumulative += histogram[i];
+        if (cumulative >= count * 0.6) { reference = clamp(i, 48, 224); break; }
+      }
+      const rgb = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16));
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (!source[i + 3]) continue;
+        const high = Math.max(source[i], source[i + 1], source[i + 2]);
+        const low = Math.min(source[i], source[i + 1], source[i + 2]);
+        // Neutral dark pupils/linework remain neutral and dark.
+        if (high < 72 && high - low < 15) continue;
+        const shade = high / reference;
+        const light = clamp((high - reference) / (255 - reference), 0, 1) * 0.65;
+        for (let channel = 0; channel < 3; channel++) {
+          pixels[i + channel] = Math.round(shade <= 1 ? rgb[channel] * shade :
+            rgb[channel] + (255 - rgb[channel]) * light);
+        }
+      }
+      ctx.putImageData(data, 0, 0);
+      return { sprite: tinted, pixels: pupilPixels };
+    }
+
+    async loadShapeAssets(definition) {
+      const box = { ...definition.box }, eye = { ...definition.eye };
+      const faceBounds = { ...FACE_BOUNDS, ...definition.faceBounds };
+      if (!Number.isFinite(faceBounds.left) || !Number.isFinite(faceBounds.right) ||
+        faceBounds.left < 0 || faceBounds.right > this.canvas.width || faceBounds.left >= faceBounds.right) {
+        throw new Error("눈을 배치할 얼굴 범위를 확인해 줘");
+      }
+      for (const key of ["x", "y", "w", "h"]) {
+        if (!Number.isInteger(box[key])) throw new Error("눈 모양 영역은 정수 좌표여야 해");
+      }
+      if (box.w <= 0 || box.h <= 0 || box.x < 0 || box.y < 0 ||
+        box.x + box.w > this.canvas.width || box.y + box.h > this.canvas.height) {
+        throw new Error("눈 모양 영역이 기본 캔버스 밖에 있어");
+      }
+      if (!["x", "y", "lidBottom", "maxX", "maxY"].every(key => Number.isFinite(eye[key])) ||
+        eye.x <= box.x || eye.x >= box.x + box.w || eye.maxX <= 0 || eye.maxY <= 0) {
+        throw new Error("눈 모양의 중심과 이동 범위를 확인해 줘");
+      }
+      const entries = await Promise.all(["sclera", "pupil", "highlights", "eyelashes"].map(async name => {
+        const src = definition.sources?.[name];
+        if (typeof src !== "string" || !src) throw new Error("눈 파츠 경로가 없어: " + name);
         const image = new Image();
         image.decoding = "async";
         await new Promise((resolve, reject) => {
@@ -218,33 +365,72 @@
           throw new Error("눈 파츠는 몸체와 동일한 1206×2622 좌표를 사용해야 해: " + src);
         }
         const trimmed = document.createElement("canvas");
-        trimmed.width = BOX.w;
-        trimmed.height = BOX.h;
-        trimmed.getContext("2d").drawImage(image, BOX.x, BOX.y,
-          BOX.w, BOX.h, 0, 0, BOX.w, BOX.h);
+        trimmed.width = box.w; trimmed.height = box.h;
+        const ctx = trimmed.getContext("2d");
+        if (!ctx) throw new Error("눈 합성용 Canvas를 사용할 수 없어");
+        ctx.drawImage(image, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
         return [name, trimmed];
       }));
-      this.sprites = Object.fromEntries(entries);
-      this.irisBuffer = document.createElement("canvas");
-      this.irisBuffer.width = BOX.w;
-      this.irisBuffer.height = BOX.h;
-      this.irisContext = this.irisBuffer.getContext("2d");
-      this.highlightBuffer = document.createElement("canvas");
-      this.highlightBuffer.width = BOX.w;
-      this.highlightBuffer.height = BOX.h;
-      this.highlightContext = this.highlightBuffer.getContext("2d");
-      if (!this.irisContext || !this.highlightContext) throw new Error("눈 합성용 Canvas를 사용할 수 없어");
-      const alpha = Object.fromEntries(["sclera", "pupil", "highlights"].map(
-        name => [name, readAlpha(this.sprites[name])]));
-      const middle = Math.round(EYE.x - BOX.x);
-      this.eyeParts = [[0, middle], [middle, BOX.w]].map(([from, to]) => {
-        const sclera = alphaBounds(alpha.sclera, from, to);
-        const pupil = alphaBounds(alpha.pupil, from, to);
-        const highlight = alphaBounds(alpha.highlights, from, to);
+      const sprites = Object.fromEntries(entries);
+      const alpha = Object.fromEntries(["sclera", "pupil", "highlights", "eyelashes"].map(
+        name => [name, readAlpha(sprites[name])]));
+      const middle = Math.round(eye.x - box.x);
+      const eyeParts = [[0, middle], [middle, box.w]].map(([from, to]) => {
+        const sclera = alphaBounds(alpha.sclera, from, to, box);
+        const pupil = alphaBounds(alpha.pupil, from, to, box);
+        const highlight = alphaBounds(alpha.highlights, from, to, box);
+        const eyelashes = alphaBounds(alpha.eyelashes, from, to, box);
         if (!sclera || !pupil || !highlight) throw new Error("눈 파츠의 좌우 알파 영역을 찾을 수 없어");
-        return { from, to, sclera, pupil, highlight };
+        return { from, to, sclera, pupil, highlight, eyelashes: eyelashes || sclera };
       });
-      this.eyeMasks = { sclera: distanceField(alpha.sclera), pupil: distanceField(alpha.pupil) };
+      const eyeMasks = { box, sclera: distanceField(alpha.sclera, box), pupil: distanceField(alpha.pupil, box) };
+      return { box, eye, sprites, eyeParts, eyeMasks, faceBounds };
+    }
+
+    async setShape(id) {
+      const request = ++this.shapeRequest;
+      if (this.disposed) return false;
+      const definition = this.getShapes().find(shape => shape.id === id);
+      if (!definition) return false;
+      // Even reselecting the active set cancels an older pending request.
+      if (this.sprites && this.appearance.eyeShape === id) return true;
+      try {
+        const loaded = await this.loadShapeAssets(definition);
+        if (request !== this.shapeRequest || this.disposed) return false;
+        // Stage every allocation/tint before publishing the new shape. A bad
+        // asset, tainted canvas or unavailable context leaves the old eyes intact.
+        const appearance = this.constrainSpacing({ ...this.appearance, eyeShape: id },
+          loaded.eyeParts, loaded.box, loaded.faceBounds);
+        loaded.sourcePupil = loaded.sprites.pupil;
+        const tinted = this.tintPupil(loaded.sourcePupil, loaded.box, this.appearance.eyeColor, null);
+        loaded.sprites.pupil = tinted.sprite;
+        loaded.pupilPixels = tinted.pixels;
+        loaded.irisBuffer = document.createElement("canvas");
+        loaded.irisBuffer.width = loaded.box.w; loaded.irisBuffer.height = loaded.box.h;
+        loaded.irisContext = loaded.irisBuffer.getContext("2d");
+        loaded.highlightBuffer = document.createElement("canvas");
+        loaded.highlightBuffer.width = loaded.box.w; loaded.highlightBuffer.height = loaded.box.h;
+        loaded.highlightContext = loaded.highlightBuffer.getContext("2d");
+        if (!loaded.irisContext || !loaded.highlightContext) throw new Error("눈 합성용 Canvas를 사용할 수 없어");
+        const oldEye = this.eye;
+        Object.assign(this, loaded);
+        this.appearance = appearance;
+        // Retain gaze direction when the selected artwork has a new range.
+        const rx = this.eye.maxX / oldEye.maxX, ry = this.eye.maxY / oldEye.maxY;
+        for (const key of ["x", "hx", "targetX", "vx", "hvx"]) this[key] *= rx;
+        for (const key of ["y", "hy", "targetY", "vy", "hvy"]) this[key] *= ry;
+        this.layerKey = null;
+        this.rig.render();
+        return true;
+      } catch (error) {
+        if (request === this.shapeRequest && !this.disposed) console.warn("눈 모양을 불러오지 못했어:", error);
+        return false;
+      }
+    }
+
+    async load() {
+      const first = this.getShapes()[0];
+      if (!first || !await this.setShape(first.id)) throw new Error("기본 눈을 불러오지 못했어");
       this.rig.eyes = this;
       this.canvas.addEventListener("pointerdown", this.onDown);
       this.canvas.addEventListener("pointermove", this.onMove);
@@ -257,6 +443,7 @@
     }
 
     prepareEyeLayers() {
+      const BOX = this.box;
       const key = [this.x, this.y, this.vx, this.vy, this.targetX,
         this.hx, this.hy, this.hvx, this.hvy].join(",");
       if (this.layerKey === key) return;
@@ -308,6 +495,7 @@
 
     draw(ctx) {
       if (!this.sprites) return;
+      const BOX = this.box, EYE = this.eye;
       ctx.save();
       // BodyShape deforms the Head PNG in jaw-centred coordinates. Apply the
       // identical transform to eyes INSIDE the rig's torso rotation.
@@ -320,29 +508,43 @@
         ctx.scale(scale, scale);
         ctx.translate(-x, -jawY);
       }
-
-      // The lower eyelash stays nearly anchored while the upper eyelid folds
-      // toward it. On release, the lid briefly overshoots before settling.
-      const closed = clamp(this.blinkValue, -0.12, BLINK_DEPTH);
-      const openness = 1 - closed; // 20% of the original aperture remains at peak blink.
-      ctx.translate(EYE.x, EYE.lidBottom);
-      ctx.scale(1 + Math.max(0, closed) * 0.015, openness);
-      ctx.translate(-EYE.x, -EYE.lidBottom);
-
-      // All composited layers share the partial-blink transform.
       this.prepareEyeLayers();
-      ctx.drawImage(this.sprites.sclera, BOX.x, BOX.y);
-      ctx.drawImage(this.irisBuffer, BOX.x, BOX.y);
-      ctx.drawImage(this.highlightBuffer, BOX.x, BOX.y);
-      // Original eyelash linework always remains in front of the eye whites.
-      ctx.drawImage(this.sprites.eyelashes, BOX.x, BOX.y);
+      const size = this.appearance.eyeSize / 100;
+      const spacing = this.appearance.eyeSpacing / 100;
+      const middle = (this.eyeParts[0].sclera.cx + this.eyeParts[1].sclera.cx) / 2;
+      const halfDistance = (this.eyeParts[1].sclera.cx - this.eyeParts[0].sclera.cx) / 2;
+      // setAppearance stores the actual constrained spacing, keeping lashes
+      // separated and inside the face at every supported size.
+      const safeDistance = halfDistance * spacing;
+      const closed = clamp(this.blinkValue, -0.12, BLINK_DEPTH);
+      const openness = 1 - closed;
+      for (let i = 0; i < this.eyeParts.length; i++) {
+        const part = this.eyeParts[i];
+        const cx = BOX.x + part.sclera.cx, cy = BOX.y + part.sclera.cy;
+        const targetX = BOX.x + middle + (i ? 1 : -1) * safeDistance;
+        ctx.save();
+        ctx.translate(targetX, cy);
+        ctx.scale(size, size);
+        ctx.translate(-cx, -cy);
+        // Size and separation affect every layer together; blinking remains
+        // inside each eye, so its aperture and highlight mask cannot diverge.
+        ctx.translate(cx, EYE.lidBottom);
+        ctx.scale(1 + Math.max(0, closed) * 0.015, openness);
+        ctx.translate(-cx, -EYE.lidBottom);
+        for (const layer of [this.sprites.sclera, this.irisBuffer,
+          this.highlightBuffer, this.sprites.eyelashes]) {
+          ctx.drawImage(layer, part.from, 0, part.to - part.from, BOX.h,
+            BOX.x + part.from, BOX.y, part.to - part.from, BOX.h);
+        }
+        ctx.restore();
+      }
       ctx.restore();
     }
 
     // Return eye centre in the displayed artboard while respecting idle
     // root bob, torso angle, head size and neck length.
     eyeInCanvas() {
-      let { x, y } = EYE;
+      let { x, y } = this.eye;
       const shape = this.bodyShape;
       if (shape?.headNeckAnchors) {
         const anchor = shape.headNeckAnchors;
@@ -377,6 +579,7 @@
     }
 
     setGaze(nx, ny) {
+      const EYE = this.eye;
       this.targetX = clamp(Number(nx) || 0, -1, 1) * EYE.maxX;
       this.targetY = clamp(Number(ny) || 0, -1, 1) * EYE.maxY;
       if (this.reduced) {
@@ -447,6 +650,7 @@
     }
 
     step(now) {
+      const EYE = this.eye;
       this.frameId = 0;
       const dt = this.lastFrame === null ? 1 / 60 : clamp((now - this.lastFrame) / 1000, 1 / 240, 0.035);
       this.lastFrame = now;
@@ -491,6 +695,8 @@
     }
 
     dispose() {
+      this.disposed = true;
+      this.shapeRequest++;
       clearTimeout(this.blinkTimer);
       if (this.frameId) cancelAnimationFrame(this.frameId);
       this.canvas.removeEventListener("pointerdown", this.onDown);
@@ -503,5 +709,5 @@
   }
 
   window.DressLabEyes = DressLabEyes;
-  window.DressLabEyesConfig = { BOX, EYE, SOURCES };
+  window.DressLabEyesConfig = { BOX, EYE, SOURCES, APPEARANCE_LIMITS };
 })();

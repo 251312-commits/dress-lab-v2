@@ -5,8 +5,9 @@
 (() => {
   "use strict";
 
-  // Separate instances keep Dress Room clothing colors and Magic Room skin colors independent.
-  function mount(container, source = "dress", initialHex = "#000000") {
+  // Instances keep clothing, skin and eye colors independent. Silent updates
+  // let an editor display restored state without emitting a user color choice.
+  function mount(container, source = "dress", initialHex = "#000000", options = {}) {
     if (!container) return null;
     const wheel = container.querySelector(".ui-wheel");
   const hexOutput = container.querySelector(".ui-hex");
@@ -132,7 +133,9 @@
     toneMarker.style.backgroundColor = hex;
 
     if (announce) {
-      window.dispatchEvent(new CustomEvent(source === "skin" ? "dresslab:skin-color-change" : "dresslab:color-change", {
+      const eventName = source === "skin" ? "dresslab:skin-color-change"
+        : source === "eye" ? "dresslab:eye-color-change" : "dresslab:color-change";
+      window.dispatchEvent(new CustomEvent(eventName, {
         detail: { h: value.h, s: value.s, b: value.b, hex, rgb: rgb.slice(), source }
       }));
     }
@@ -151,13 +154,13 @@
     paint();
   }
 
-  function setHex(hex) {
+  function setHex(hex, announce = true) {
     const match = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
     if (!match) return false;
     const n = parseInt(match[1], 16);
     Object.assign(value, rgbToHsv((n >> 16) & 255, (n >> 8) & 255, n & 255));
     exactHex = "#" + match[1].toUpperCase();
-    paint();
+    paint(announce);
     return true;
   }
 
@@ -263,7 +266,7 @@
     setColor,
     setHex
   };
-  if (!setHex(initialHex)) paint();
+  if (!setHex(initialHex, options.announceInitial !== false)) paint(options.announceInitial !== false);
   return api;
   }
 
