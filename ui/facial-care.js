@@ -7,6 +7,12 @@
   const canvas = document.getElementById("character");
   if (!canvas) return;
   const STORAGE_KEY = "dresslab-v2:facial-care:v4";
+  const DEFAULT_CUSTOMER = "temporary-customer";
+  const ACTIVE_CUSTOMER_KEY = "dresslab-v2:active-care-customer";
+  const validCustomer = id => typeof id === "string" && id.trim().length > 0 && id.length <= 160;
+  const customerKey = id => id === DEFAULT_CUSTOMER ? STORAGE_KEY : STORAGE_KEY + ":customer:" + encodeURIComponent(id);
+  const MAKEUP = { rose: "#D77E91", peach: "#E6A17E", berry: "#B76C9B" };
+  const CHEEKS = [{ x: 220, y: 857 }, { x: 438, y: 857 }];
   const PREVIOUS_STORAGE_KEYS = ["dresslab-v2:facial-care:v3", "dresslab-v2:facial-care:v2"];
   const TOOLS = ["cleanser", "towel", "serum", "cream", "roller"];
   const PRODUCTS = ["cleanser", "serum", "cream"];
@@ -62,7 +68,13 @@
       this.frame = 0;
       this.keyboardIndex = 0;
       this.originalLabel = canvas.getAttribute("aria-label");
+      this.customerId = DEFAULT_CUSTOMER;
+      try {
+        const id = localStorage.getItem(ACTIVE_CUSTOMER_KEY);
+        if (validCustomer(id)) this.customerId = id;
+      } catch (_) { /* Storage may be blocked. */ }
       this.clearMaterials();
+      this.clearCycle();
       this.restore();
       this.cursor = document.createElement("img");
       this.cursor.className = "ui-facial-cursor";
@@ -82,10 +94,11 @@
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) { this.endStroke(); this.save(); }
       });
-      window.addEventListener("dresslab:room-change", () => this.syncActive());
+      window.addEventListener("dresslab:room-change", event => this.roomChanged(event.detail?.room));
       window.addEventListener("dresslab:care-tab-change", () => this.syncActive());
       window.addEventListener("dresslab:care-tool-select", event => {
-        if (event.detail?.tab !== "facial" || !TOOLS.includes(event.detail.tool)) return;
+        if (event.detail?.tab !== "facial" || this.phase === "makeup" ||
+            !TOOLS.includes(event.detail.tool) || (this.phase === "removal" && event.detail.tool !== "towel")) return;
         this.endStroke();
         this.chooseTool(event.detail.tool);
         this.keyboardIndex = 0;
@@ -110,7 +123,71 @@
       this.towelWet = false;
     }
 
+    clearCycle() {
+      this.phase = "initial";
+      this.makeup = null;
+      this.makeupAlpha = [0, 0];
+    }
+
+    // Future reception system calls setCustomer(id); a new ID starts clean.
+    setCustomer(id) {
+      if (!validCustomer(id)) return false;
+      if (id === this.customerId) return true;
+      this.endStroke();
+      this.save();
+      this.customerId = id;
+      this.selectedTool = "cleanser";
+      this.keyboardIndex = 0;
+      this.clearMaterials();
+      this.clearCycle();
+      this.restore();
+      try { localStorage.setItem(ACTIVE_CUSTOMER_KEY, id); } catch (_) {}
+      this.updateCursorArtwork(this.selectedTool);
+      this.syncActive(false);
+      return true;
+    }
+
+    // Do not interrupt a live stroke. Only a clean, fully treated face advances.
+    finishPhase() {
+      if (!this.active || this.stroke || this.pointerId !== null) return false;
+      if (this.phase === "initial" && this.overallProgress() >= 1 - 1e-9) {
+        this.phase = "makeup";
+      } else if (this.phase === "removal" && this.makeupAlpha.every(a => a === 0)) {
+        this.phase = "makeup";
+        this.makeup = null;
+      } else return false;
+      this.towelWet = false;
+      this.save();
+      this.syncActive();
+      return true;
+    }
+
+    selectMakeup(id) {
+      if (this.phase !== "makeup" || window.DressLabRooms?.current !== "care" ||
+          window.DressLabCareRoom?.currentTab !== "facial" || !Object.hasOwn(MAKEUP, id)) return false;
+      this.makeup = id;
+      this.makeupAlpha = [1, 1];
+      this.save();
+      this.publish();
+      this.requestRender();
+      return true;
+    }
+
+    roomChanged(room) {
+      // A real room exit, not a tab switch, schedules removal for the next visit.
+      if (this.lastRoom === "care" && room !== "care" && this.phase === "makeup") {
+        this.phase = "removal";
+        this.chooseTool("towel");
+        this.towelWet = false;
+        this.keyboardIndex = 0;
+        this.save();
+      }
+      this.lastRoom = room;
+      this.syncActive();
+    }
+
     bind(rig, bodyShape) {
+      this.lastRoom = window.DressLabRooms?.current;
       if (this.rig && this.rig !== rig) this.rig.facialCare = null;
       this.rig = rig;
       this.bodyShape = bodyShape;
@@ -121,8 +198,9 @@
 
     restore() {
       try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ||
-          PREVIOUS_STORAGE_KEYS.map(key => localStorage.getItem(key)).find(Boolean));
+        const saved = JSON.parse(localStorage.getItem(customerKey(this.customerId)) ||
+          (this.customerId === DEFAULT_CUSTOMER
+            ? PREVIOUS_STORAGE_KEYS.map(key => localStorage.getItem(key)).find(Boolean) : null));
         if (![2, 3, 4].includes(saved?.version) || !saved.products || !validField(saved.dirt) ||
             !validField(saved.hydration) || !validField(saved.massage)) return;
         for (const id of PRODUCTS) {
@@ -163,12 +241,23 @@
         }
         this.towelWet = this.selectedTool === "towel" &&
           (saved.version === 4 ? saved.towelWet : this.careWork.towel > 0);
+        if (["makeup", "removal"].includes(saved.phase) && this.overallProgress() >= 1 - 1e-9) {
+          this.phase = saved.phase;
+          if (Object.hasOwn(MAKEUP, saved.makeup) && Array.isArray(saved.makeupAlpha) &&
+              saved.makeupAlpha.length === 2 && saved.makeupAlpha.every(a => Number.isFinite(a) && a >= 0 && a <= 1)) {
+            this.makeup = saved.makeup;
+            this.makeupAlpha = saved.makeupAlpha.slice();
+          }
+          if (this.phase === "removal") this.selectedTool = "towel";
+          else this.towelWet = false;
+        }
       } catch (_) { /* Corrupt/blocked storage must not prevent care. */ }
     }
 
     save() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 4,
+        localStorage.setItem(customerKey(this.customerId), JSON.stringify({ version: 4,
+          customerId: this.customerId, phase: this.phase, makeup: this.makeup, makeupAlpha: this.makeupAlpha,
           selectedTool: this.selectedTool, lastUsed: this.lastUsed, rollerWork: this.rollerWork,
           products: this.products, paintOrder: this.paintOrder, dirt: this.dirt,
           hydration: this.hydration, massage: this.massage, careWork: this.careWork, towelWet: this.towelWet }));
@@ -176,6 +265,8 @@
     }
 
     recommend() {
+      if (this.phase === "makeup") return null;
+      if (this.phase === "removal") return "towel";
       const id = this.lastUsed;
       if (!id) return "cleanser";
       const credits = this.treatmentCredits();
@@ -242,6 +333,8 @@
     // Detailed copies are for save/debug/tests, not percentages or UI badges.
     getState() {
       return { active: this.active, ready: Boolean(this.rig), selectedTool: this.selectedTool,
+        customerId: this.customerId, phase: this.phase, makeup: this.makeup,
+        makeupAlpha: this.makeupAlpha.slice(), removalProgress: 1 - sum(this.makeupAlpha) / 2,
         recommendedTool: this.recommend(), lastUsed: this.lastUsed,
         overallProgress: this.overallProgress(), careWork: { ...this.careWork }, towelWet: this.towelWet,
         paintOrder: this.paintOrder.slice(),
@@ -254,19 +347,22 @@
     publish() {
       window.dispatchEvent(new CustomEvent("dresslab:facial-state", { detail: {
         active: this.active, ready: Boolean(this.rig), selectedTool: this.selectedTool,
+        customerId: this.customerId, phase: this.phase, makeup: this.makeup,
+        removalProgress: 1 - sum(this.makeupAlpha) / 2,
         recommendedTool: this.recommend(), overallProgress: this.overallProgress(), towelWet: this.towelWet
       } }));
     }
 
-    syncActive() {
+    syncActive(readSelection = true) {
       this.endStroke();
-      this.active = Boolean(this.rig) && window.DressLabRooms?.current === "care" &&
+      this.active = Boolean(this.rig) && this.phase !== "makeup" && window.DressLabRooms?.current === "care" &&
         window.DressLabCareRoom?.currentTab === "facial";
       canvas.dataset.facialActive = String(this.active);
       if (this.active) {
         // Only read the user's tab selection. Never advance or reveal a tool.
         const chosen = window.DressLabCareRoom.selectedTool;
-        if (TOOLS.includes(chosen)) this.chooseTool(chosen);
+        if (this.phase === "removal") this.chooseTool("towel");
+        else if (readSelection && TOOLS.includes(chosen)) this.chooseTool(chosen);
         canvas.tabIndex = 0;
         canvas.setAttribute("role", "button");
         canvas.setAttribute("aria-label", "페이셜 케어 얼굴. 선반의 도구를 얼굴로 끌어 도포하고, 얼굴을 직접 문질러 펴 바른다. 수건은 대야의 물에 적신 뒤 얼굴을 닦는다. 도포 횟수와 도구 순서는 자유롭다. 도구에 초점을 맞춘 Enter 또는 스페이스는 도구 사용, 얼굴에서 같은 키는 문지르기이다.");
@@ -280,6 +376,7 @@
     }
 
     reset() {
+      if (this.phase !== "initial") return;
       this.endStroke();
       this.clearMaterials();
       this.updateCursorArtwork(this.selectedTool);
@@ -332,7 +429,7 @@
     }
 
     pointerDown(event) {
-      if (!this.active || event.isPrimary === false || this.pointerId !== null ||
+      if (!this.active || this.phase !== "initial" || event.isPrimary === false || this.pointerId !== null ||
           (event.button !== undefined && event.button !== 0)) return;
       const point = this.clientToFace(event.clientX, event.clientY);
       if (!point || !isFace(point.x, point.y)) return;
@@ -346,7 +443,8 @@
     }
 
     toolDrag(detail) {
-      if (!detail || !TOOLS.includes(detail.tool)) return;
+      if (!detail || !TOOLS.includes(detail.tool) ||
+          (this.phase === "removal" && detail.tool !== "towel")) return;
       if (detail.phase === "start") {
         if (!this.active || this.pointerId !== null || !Number.isFinite(detail.clientX) ||
             !Number.isFinite(detail.clientY)) return;
@@ -600,6 +698,16 @@
     }
 
     workAt(stroke, point, work) {
+      if (this.phase === "removal") {
+        if (stroke.kind === "tool" && stroke.tool === "towel" && this.towelWet) {
+          CHEEKS.forEach((cheek, i) => {
+            const weight = brushWeight(Math.hypot(cheek.x - point.x, cheek.y - point.y), 45, 120);
+            this.makeupAlpha[i] = Math.max(0, this.makeupAlpha[i] - work * 2.5 * weight);
+            if (this.makeupAlpha[i] < .005) this.makeupAlpha[i] = 0;
+          });
+        }
+        return;
+      }
       if (stroke.kind === "hand") {
         // The hand spreads everything underneath it, independently of which
         // shelf tool is highlighted. Each product retains its own material.
@@ -631,6 +739,13 @@
 
     toolKey(id) {
       if (!this.active || this.pointerId !== null || !TOOLS.includes(id)) return;
+      if (this.phase === "removal") {
+        if (id !== "towel") return;
+        this.chooseTool(id);
+        const i = this.makeupAlpha.findIndex(a => a > 0);
+        if (i >= 0) this.keyboardPass("tool", id, CHEEKS[i]);
+        return;
+      }
       this.chooseTool(id);
       const spots = this.keyboardSpots();
       if (PRODUCTS.includes(id)) {
@@ -647,7 +762,7 @@
     }
 
     keyDown(event) {
-      if (!this.active || this.pointerId !== null || event.repeat || !["Enter", " "].includes(event.key)) return;
+      if (!this.active || this.phase !== "initial" || this.pointerId !== null || event.repeat || !["Enter", " "].includes(event.key)) return;
       event.preventDefault();
       const dots = PRODUCTS.flatMap(id => this.products[id].dots.filter(dot => dot.amount > VISIBLE.dot));
       const film = CELLS.filter((_, index) => PRODUCTS.some(id => this.products[id].film[index] > VISIBLE.film));
@@ -692,7 +807,7 @@
     }
 
     draw(ctx) {
-      if (!this.active) return;
+      if (!this.active && !this.makeup) return;
       ctx.save();
       const shape = this.bodyShape;
       if (shape?.headNeckAnchors) {
@@ -701,6 +816,20 @@
         ctx.scale(scale, scale); ctx.translate(-x, -jawY);
       }
       this.clipFace(ctx);
+      if (this.makeup) {
+        CHEEKS.forEach((cheek, i) => {
+          if (this.makeupAlpha[i] <= 0) return;
+          ctx.save();
+          ctx.globalAlpha = this.makeupAlpha[i] * .65;
+          const tint = ctx.createRadialGradient(cheek.x, cheek.y, 0, cheek.x, cheek.y, 43);
+          tint.addColorStop(0, MAKEUP[this.makeup]);
+          tint.addColorStop(1, MAKEUP[this.makeup] + "00");
+          ctx.fillStyle = tint;
+          ctx.beginPath(); ctx.arc(cheek.x, cheek.y, 43, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        });
+      }
+      if (this.phase !== "initial") { ctx.restore(); return; }
       CELLS.forEach((cell, index) => {
         if (this.dirt[index] > VISIBLE.dirt) {
           ctx.fillStyle = "rgba(166,127,119," + this.dirt[index] * .3 + ")";
