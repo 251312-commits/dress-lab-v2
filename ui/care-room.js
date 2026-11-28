@@ -10,15 +10,23 @@
     ["cream", "크림"], ["roller", "롤러"]
   ].map(([id, label]) => ({ id, label,
     image: "./assets/care/facial/" + (id === "roller" ? "roller-v2" : id) + ".png" }));
+  const makeupTools = [
+    { id: "rose", label: "로즈" }, { id: "peach", label: "피치" }, { id: "berry", label: "베리" }
+  ];
   const placeholders = ["1", "2", "3"].map(id => ({ id, label: "도구 " + id }));
   const initialFacialState = window.DressLabFacialCare?.getState?.() || null;
   const initialFacialTool = facialTools.some(tool => tool.id === initialFacialState?.selectedTool)
     ? initialFacialState.selectedTool : "cleanser";
   const selectionByTab = new Map([["hair", null], ["facial", initialFacialTool], ["relaxation", null]]);
   const scrollByTab = new Map(tabs.map(([key]) => [key, 0]));
-  let selectedTab = "hair";
+  let selectedTab = initialFacialState?.phase && initialFacialState.phase !== "initial" ? "facial" : "hair";
   let dialogueOpen = false;
   let facialState = initialFacialState;
+  const facialPhase = () => facialState?.phase || "initial";
+  const isTreatment = () => selectedTab === "facial" && facialPhase() !== "makeup";
+  let previousRoom = scene.dataset.room;
+  if (facialPhase() === "makeup") selectionByTab.set("facial", facialState.makeup || null);
+  if (facialPhase() === "removal") selectionByTab.set("facial", "towel");
   let drag = null;
   let suppressClickUntil = 0;
 
@@ -31,8 +39,8 @@
       '<span class="ui-facial-overall__value" aria-hidden="true">0%</span>',
     '</div>',
     '<nav class="ui-care-tabs" aria-label="케어 종류">',
-      tabs.map(([key, label], index) => '<button type="button" class="ui-care-tab" data-care-tab="' + key +
-        '" aria-pressed="' + (index === 0) + '">' + label + '</button>').join(""),
+      tabs.map(([key, label]) => '<button type="button" class="ui-care-tab" data-care-tab="' + key +
+        '" aria-pressed="' + (key === selectedTab) + '">' + label + '</button>').join(""),
     '</nav>',
     '<section class="ui-care-dialog" aria-label="케어룸 대화창">',
       '<svg viewBox="0 0 1129 420" preserveAspectRatio="none" aria-hidden="true">',
@@ -68,7 +76,9 @@
   const next = careRoom.querySelector('[data-shelf-direction="1"]');
   const pages = careRoom.querySelector(".ui-care-shelf-pages");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const currentTools = () => selectedTab === "facial" ? facialTools : placeholders;
+  const currentTools = () => selectedTab !== "facial" ? placeholders :
+    facialPhase() === "makeup" ? makeupTools :
+    facialPhase() === "removal" ? facialTools.filter(tool => tool.id === "towel") : facialTools;
   const maxScroll = () => Math.max(0, viewport.scrollWidth - viewport.clientWidth);
   const pageOffsets = () => Array.from({ length: Math.ceil(currentTools().length / 3) },
     (_, index) => Math.min(maxScroll(), index * viewport.clientWidth));
@@ -111,7 +121,7 @@
       const id = button.dataset.careTool;
       const tool = currentTools().find(item => item.id === id);
       button.setAttribute("aria-pressed", String(id === selected));
-      button.dataset.recommended = String(selectedTab === "facial" && id === facialState?.recommendedTool);
+      button.dataset.recommended = String(isTreatment() && id === facialState?.recommendedTool);
       button.setAttribute("aria-label", tool.label + (selectedTab === "facial" ? "" : " · 준비 중"));
       if (id === "towel") {
         const image = button.querySelector(".ui-care-tool__art img");
@@ -151,19 +161,22 @@
     return ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
   }
   function syncOverall() {
-    const value = Number.isFinite(facialState?.overallProgress)
-      ? Math.max(0, Math.min(1, facialState.overallProgress)) : 0;
+    const progress = facialPhase() === "removal" ? facialState?.removalProgress : facialState?.overallProgress;
+    const value = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+    overall.setAttribute("aria-label", facialPhase() === "removal" ? "메이크업 제거 진행도" : "페이셜 전체 케어");
     const percent = value >= 1 ? 100 : Math.min(99, Math.floor(value * 100 + 1e-8));
     overall.style.setProperty("--facial-progress", value);
     overall.setAttribute("aria-valuenow", String(percent));
     overall.setAttribute("aria-valuetext", percent + "%");
     overallValue.textContent = percent + "%";
-    overall.hidden = selectedTab !== "facial";
+    overall.hidden = !isTreatment();
   }
   function syncDialog() {
     const isFacial = selectedTab === "facial";
     careRoom.dataset.careTab = selectedTab;
+    careRoom.dataset.facialPhase = facialPhase();
     dialogBubble.hidden = isFacial;
+    talk.hidden = isFacial && facialPhase() !== "initial";
     talk.textContent = isFacial ? "다시 케어" : "대화";
     talk.setAttribute("aria-label", isFacial ? "페이셜 케어 다시 시작" : "케어 안내 보기");
     const message = isFacial ? "" : dialogueOpen ? "대화 기능 준비 중" : "대화창";
@@ -185,7 +198,8 @@
           '" data-care-tool="', tool.id, '" aria-pressed="false">',
           tool.image
             ? '<span class="ui-care-tool__art"><img src="' + toolImage(tool) + '" alt="" draggable="false"></span><span class="ui-care-tool__label">' + tool.label + '</span>'
-            : tool.label,
+            : selectedTab === "facial" && facialPhase() === "makeup"
+              ? '<span class="ui-makeup-swatch" aria-hidden="true"></span><span>' + tool.label + '</span>' : tool.label,
         '</button>',
       '</div>'
     ].join("")).join("");
@@ -198,6 +212,12 @@
   }
   function setCareTool(id, options = {}) {
     if (id !== null && !currentTools().some(tool => tool.id === id)) return false;
+    if (selectedTab === "facial" && facialPhase() === "makeup") {
+      if (!id || !window.DressLabFacialCare?.selectMakeup(id)) return false;
+      selectionByTab.set("facial", id);
+      syncToolSelection();
+      return true;
+    }
     const changed = selectionByTab.get(selectedTab) !== id;
     selectionByTab.set(selectedTab, id);
     syncToolSelection();
@@ -239,7 +259,7 @@
     const buttons = Array.from(viewport.querySelectorAll(".ui-care-tool"));
     const index = buttons.indexOf(event.target);
     if (index < 0) return;
-    if (selectedTab === "facial" && (event.key === "Enter" || event.key === " ")) {
+    if (isTreatment() && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();
       if (!event.repeat) {
         finishGesture(null, true);
@@ -261,7 +281,7 @@
     revealTool(buttons[target]);
   });
   viewport.addEventListener("keyup", event => {
-    if (selectedTab === "facial" && (event.key === "Enter" || event.key === " ") &&
+    if (isTreatment() && (event.key === "Enter" || event.key === " ") &&
         event.target.closest(".ui-care-tool")) event.preventDefault();
   });
   viewport.addEventListener("dragstart", event => event.preventDefault());
@@ -291,7 +311,7 @@
   // never become treatment strokes; vertical tool drags stay captured to us.
   viewport.addEventListener("pointerdown", event => {
     if (drag || event.isPrimary === false || (event.button !== undefined && event.button !== 0)) return;
-    const facial = selectedTab === "facial";
+    const facial = isTreatment();
     if (!facial && (event.pointerType !== "mouse" || maxScroll() <= 1)) return;
     const button = event.target.closest(".ui-care-tool");
     drag = { id: event.pointerId, facial, tool: facial ? button?.dataset.careTool : null,
@@ -395,7 +415,7 @@
       return;
     }
     if (event.target.closest("#ui-care-talk")) {
-      if (selectedTab === "facial") {
+      if (selectedTab === "facial" && facialPhase() === "initial") {
         finishGesture(null, true);
         window.dispatchEvent(new CustomEvent("dresslab:facial-reset"));
       } else {
@@ -405,16 +425,31 @@
     }
   });
   window.addEventListener("dresslab:facial-state", event => {
+    const previousPhase = facialPhase(), previousCustomer = facialState?.customerId;
     facialState = event.detail || null;
-    // Recommendations are visual hints only. Never change or reveal a tool
-    // in response to treatment state; the user's selection stays in place.
-    if (selectedTab === "facial") {
+    if (previousPhase !== facialPhase() || previousCustomer !== facialState?.customerId) {
+      const selected = facialPhase() === "makeup" ? facialState?.makeup || null :
+        facialPhase() === "removal" ? "towel" : facialState?.selectedTool || "cleanser";
+      selectionByTab.set("facial", selected);
+      scrollByTab.set("facial", 0);
+      if (selectedTab === "facial") { renderTools(); syncDialog(); }
+    } else if (selectedTab === "facial") {
+      if (facialPhase() === "makeup") selectionByTab.set("facial", facialState?.makeup || null);
       syncToolSelection();
       syncOverall();
+    }
+    // Wait until the treatment stroke is finished; the engine checks this.
+    if (selectedTab === "facial" && scene.dataset.room === "care" && facialState?.active &&
+        ((facialPhase() === "initial" && facialState.overallProgress >= 1 - 1e-9) ||
+         (facialPhase() === "removal" && facialState.removalProgress >= 1))) {
+      window.DressLabFacialCare?.finishPhase?.();
     }
   });
   window.addEventListener("dresslab:room-change", () => {
     finishGesture(null, true);
+    const entered = previousRoom !== "care" && scene.dataset.room === "care";
+    previousRoom = scene.dataset.room;
+    if (entered && facialPhase() !== "initial") setCareTab("facial");
     syncBasin();
     requestAnimationFrame(updateShelfControls);
   });
