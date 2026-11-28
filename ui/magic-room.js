@@ -89,20 +89,7 @@
     ? window.DressLabColorPicker.mount(skinPanel.querySelector(".ui-skin-colors"), "skin", "#FAEDED")
     : null;
 
-  // Face controls are still a placeholder until the face editor exists.
-  for (const [id, label, explanation] of [
-    ["face", "얼굴", "얼굴 편집 기능은 아직 준비 중이야."]
-  ]) {
-    const placeholder = document.createElement("section");
-    placeholder.className = "ui-magic-placeholder ui-magic-placeholder--" + id;
-    placeholder.setAttribute("aria-label", label + " 편집");
-    const title = document.createElement("strong");
-    title.textContent = label;
-    const description = document.createElement("p");
-    description.textContent = explanation;
-    placeholder.append(title, description);
-    editor.appendChild(placeholder);
-  }
+  // The face tab is mounted independently by ui/face-editor.js.
 
   const rangeElements = Object.fromEntries(controls.map(([key]) =>
     [key, panel.querySelector("#magic-range-" + key)]));
